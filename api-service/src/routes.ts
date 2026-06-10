@@ -1,5 +1,5 @@
 import { Express, Request, Response } from 'express';
-import { spawnSync, spawn } from 'child_process';
+import { spawnSync, spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
@@ -10,6 +10,10 @@ import { materializeInto as materializeDefinition, writeDefinition } from './def
 
 const PIPELINES_DIR = '/data/pipelines';
 const COMPOSE_PROJECT = 'bender';
+// Shared, persistent Claude credential dir (the /data/credentials volume mounted
+// into every pipeline container as /claude-data). Pointing CLAUDE_CONFIG_DIR here
+// means a single sign-in authenticates every pipeline run.
+const CLAUDE_CONFIG_DIR = '/claude-data';
 const BENDER_IMAGE = 'bender-claude';
 const NETWORK_NAME = 'bender_default';
 const DATA_DIR = '/data';
@@ -653,6 +657,7 @@ export function registerRoutes(app: Express): void {
         '-e', 'PGID=1000',
         '-e', 'CLAUDE_CODE_SKIP_PERMISSIONS_DISCLAIMER=1',
         '-e', `PROJECT_NAME=${projectName}`,
+        '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`,
         ...credentialEnvArgs(),
         ...pipelineArgEnvArgs(req.body.args),
         '-v', `${PIPELINES_DIR}/${projectName}:/workspace`,
@@ -1393,6 +1398,7 @@ export function registerRoutes(app: Express): void {
     const exitCode = await new Promise<number>((resolve) => {
       const p = spawn('docker', [
         'exec', '-u', '1000:1000',
+        '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`,
         '-e', `STAGE_ARTIFACTS=${wsArtifacts}`,
         '-e', `STAGE_PROMPT=${prompt}`,
         container,
@@ -1777,6 +1783,66 @@ export function registerRoutes(app: Express): void {
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  // ── Claude auth (shared across all pipeline containers via CLAUDE_CONFIG_DIR) ──
+  // Check whether the Claude CLI that runs stages is authenticated, and drive an
+  // OAuth sign-in when it isn't, so a run can be gated on valid auth.
+  function checkClaudeAuth(container: string): { authenticated: boolean; method: string; loggedIn: boolean } {
+    if (process.env.ANTHROPIC_API_KEY) return { authenticated: true, method: 'apiKey', loggedIn: false };
+    const r = spawnSync('docker', ['exec', '-u', '1000:1000', '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`, container, 'claude', 'auth', 'status'], { encoding: 'utf-8' });
+    let loggedIn = false, method = 'none';
+    try { const j = JSON.parse((r.stdout || '').trim()); loggedIn = !!j.loggedIn; method = j.authMethod || 'none'; } catch { /* not logged in / not running */ }
+    return { authenticated: loggedIn, method, loggedIn };
+  }
+
+  // In-flight `claude auth login` processes, keyed by a session id, awaiting a code.
+  const loginSessions = new Map<string, { proc: ChildProcess; pipeline: string }>();
+
+  app.get('/api/pipelines/:name/claude-auth', (req: Request, res: Response) => {
+    try { res.json(checkClaudeAuth(`${COMPOSE_PROJECT}-${req.params.name}-1`)); }
+    catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  // Start an OAuth sign-in: returns the URL to visit. The login process stays
+  // alive awaiting the pasted code (submitted to the endpoint below).
+  app.post('/api/pipelines/:name/claude-auth/login', (req: Request, res: Response) => {
+    const container = `${COMPOSE_PROJECT}-${req.params.name}-1`;
+    const proc = spawn('docker', ['exec', '-i', '-u', '1000:1000', '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`, container, 'claude', 'auth', 'login', '--claudeai'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const sid = hexId(8);
+    let out = '';
+    let done = false;
+    const timer = setTimeout(() => { if (!done) { done = true; try { proc.kill(); } catch { /* ignore */ } if (!res.headersSent) res.status(504).json({ error: 'Timed out waiting for sign-in URL' }); } }, 20000);
+    const onData = (d: Buffer) => {
+      out += d.toString();
+      const m = out.match(/https:\/\/\S*oauth\S*/);
+      if (m && !done) {
+        done = true;
+        clearTimeout(timer);
+        loginSessions.set(sid, { proc, pipeline: req.params.name });
+        res.json({ sessionId: sid, url: m[0] });
+      }
+    };
+    proc.stdout?.on('data', onData);
+    proc.stderr?.on('data', onData);
+    proc.on('error', (e) => { if (!done) { done = true; clearTimeout(timer); if (!res.headersSent) res.status(500).json({ error: String(e) }); } });
+    proc.on('close', () => { if (!done) { done = true; clearTimeout(timer); if (!res.headersSent) res.status(500).json({ error: 'Sign-in process exited early', output: out.slice(0, 500) }); } });
+  });
+
+  // Submit the pasted OAuth code to complete sign-in; re-checks auth after.
+  app.post('/api/pipelines/:name/claude-auth/login/:sid', async (req: Request, res: Response) => {
+    const session = loginSessions.get(req.params.sid);
+    if (!session) return res.status(404).json({ error: 'No active sign-in session' });
+    const code = (req.body.code || '').trim();
+    if (!code) return res.status(400).json({ error: 'code is required' });
+    try { session.proc.stdin?.write(code + '\n'); } catch { /* ignore */ }
+    const completed = await new Promise<boolean>((resolve) => {
+      const t = setTimeout(() => resolve(false), 25000);
+      session.proc.on('close', () => { clearTimeout(t); resolve(true); });
+    });
+    loginSessions.delete(req.params.sid);
+    const status = checkClaudeAuth(`${COMPOSE_PROJECT}-${req.params.name}-1`);
+    res.json({ completed, ...status });
   });
 
   // Rerun a single stage within an existing run (resets it + later stages, re-executes)

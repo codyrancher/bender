@@ -451,6 +451,23 @@ export const api = {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/cancel`, { method: 'POST' })
   },
 
+  // Claude auth (gates a run on the stage-executor CLI being signed in)
+  async getClaudeAuth(pipeline: string): Promise<{ authenticated: boolean; method: string; loggedIn: boolean }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-auth`)
+  },
+
+  async startClaudeLogin(pipeline: string): Promise<{ sessionId: string; url: string }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-auth/login`, { method: 'POST' })
+  },
+
+  async completeClaudeLogin(pipeline: string, sessionId: string, code: string): Promise<{ completed: boolean; authenticated: boolean; method: string }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-auth/login/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+  },
+
   async getPipelineMd(pipeline: string): Promise<{ content: string }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/pipeline-md`)
   },

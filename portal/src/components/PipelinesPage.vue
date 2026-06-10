@@ -182,15 +182,61 @@ function isRunActive(pipeline: string): boolean {
 async function toggleRun(pipeline: string, e: Event) {
   e.stopPropagation()
   const run = latestRun(pipeline)
+  if (run && run.status === 'running') {
+    try { await api.cancelPipelineRun(pipeline, run.id); await fetchRuns(pipeline) } catch {}
+    return
+  }
+  // Gate the run on the stage-executor Claude CLI being signed in.
   try {
-    if (run && run.status === 'running') {
-      await api.cancelPipelineRun(pipeline, run.id)
-    } else {
-      await api.createPipelineRun(pipeline)
-      expandedPipeline.value = pipeline
-    }
+    const auth = await api.getClaudeAuth(pipeline)
+    if (!auth.authenticated) { authModal.value = { pipeline, code: '', loading: false, error: '' }; return }
+  } catch { /* if the check itself fails, let the run proceed and surface the error in logs */ }
+  await startRun(pipeline)
+}
+
+async function startRun(pipeline: string) {
+  try {
+    await api.createPipelineRun(pipeline)
+    expandedPipeline.value = pipeline
     await fetchRuns(pipeline)
   } catch {}
+}
+
+// --- Claude sign-in (OAuth) gate ---
+const authModal = ref<{ pipeline: string; url?: string; sessionId?: string; code: string; loading: boolean; error: string } | null>(null)
+
+async function fetchLoginLink() {
+  const m = authModal.value
+  if (!m) return
+  m.loading = true; m.error = ''
+  try {
+    const r = await api.startClaudeLogin(m.pipeline)
+    m.url = r.url; m.sessionId = r.sessionId
+  } catch (e) {
+    m.error = e instanceof Error ? e.message : 'Failed to get a sign-in link'
+  } finally {
+    if (authModal.value) authModal.value.loading = false
+  }
+}
+
+async function submitLoginCode() {
+  const m = authModal.value
+  if (!m || !m.sessionId || !m.code.trim()) return
+  m.loading = true; m.error = ''
+  try {
+    const r = await api.completeClaudeLogin(m.pipeline, m.sessionId, m.code.trim())
+    if (r.authenticated) {
+      const pipeline = m.pipeline
+      authModal.value = null
+      await startRun(pipeline)
+    } else {
+      m.error = 'Sign-in did not complete — double-check the code and try again.'
+    }
+  } catch (e) {
+    m.error = e instanceof Error ? e.message : 'Sign-in failed'
+  } finally {
+    if (authModal.value) authModal.value.loading = false
+  }
 }
 
 function formatSize(bytes?: number): string {
@@ -856,6 +902,48 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
         <button class="modal-btn cancel" :disabled="creating" @click="showNewModal = false">Cancel</button>
         <button class="modal-btn create" :disabled="!newName.trim() || creating || !argsValid" @click="handleCreate">
           {{ creating ? 'Creating...' : 'Create' }}
+        </button>
+      </template>
+    </Modal>
+
+    <!-- Claude sign-in gate -->
+    <Modal v-if="authModal" title="Claude sign-in required" :subtitle="authModal.pipeline" @close="!authModal.loading && (authModal = null)">
+      <div class="modal-pad">
+        <p class="auth-desc">
+          Pipeline stages run the Claude CLI inside the pipeline container, which isn't signed in.
+          Sign in once — credentials are shared across all pipelines.
+        </p>
+        <div v-if="!authModal.url" class="auth-getlink">
+          <button class="modal-btn create" :disabled="authModal.loading" @click="fetchLoginLink">
+            {{ authModal.loading ? 'Getting link…' : 'Get sign-in link' }}
+          </button>
+        </div>
+        <template v-else>
+          <ol class="auth-steps">
+            <li><a :href="authModal.url" target="_blank" rel="noopener">Open the Claude sign-in page ↗</a></li>
+            <li>Approve access, then paste the code it gives you below.</li>
+          </ol>
+          <input
+            v-model="authModal.code"
+            class="auth-code"
+            type="text"
+            placeholder="Paste authentication code"
+            autocomplete="off"
+            spellcheck="false"
+            @keydown.enter="submitLoginCode"
+          />
+        </template>
+        <div v-if="authModal.error" class="auth-error">{{ authModal.error }}</div>
+      </div>
+      <template #footer>
+        <button class="modal-btn cancel" :disabled="authModal.loading" @click="authModal = null">Cancel</button>
+        <button
+          v-if="authModal.url"
+          class="modal-btn create"
+          :disabled="authModal.loading || !authModal.code.trim()"
+          @click="submitLoginCode"
+        >
+          {{ authModal.loading ? 'Signing in…' : 'Complete sign-in & run' }}
         </button>
       </template>
     </Modal>
@@ -2083,6 +2171,26 @@ a.artifact-row:hover,
 
 .args-form input:focus { border-color: var(--color-accent); }
 .args-form input::placeholder { color: var(--color-text-muted); }
+
+/* Claude sign-in modal */
+.auth-desc { font-size: 13px; color: var(--color-text-hover); margin: 0 0 14px; line-height: 1.5; }
+.auth-getlink { display: flex; }
+.auth-steps { margin: 0 0 12px; padding-left: 20px; font-size: 13px; color: var(--color-text-primary); }
+.auth-steps li { margin: 4px 0; }
+.auth-steps a { color: var(--color-accent); }
+.auth-code {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  outline: none;
+}
+.auth-code:focus { border-color: var(--color-accent); }
+.auth-error { margin-top: 10px; padding: 8px 12px; color: var(--color-error); font-size: 12px; background: rgba(232, 88, 88, 0.08); border-radius: 6px; }
 
 .modal-btn {
   padding: 8px 18px;
