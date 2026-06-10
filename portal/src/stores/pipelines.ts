@@ -279,11 +279,9 @@ export const usePipelinesStore = defineStore('pipelines', () => {
   async function deletePipeline(pipelineName: string, onLog?: (message: string) => void) {
     const ui = useUiStore()
     try {
-      if (onLog) {
-        await api.deletePipelineStream(pipelineName, onLog)
-      } else {
-        await api.deletePipeline(pipelineName)
-      }
+      // The delete endpoint streams SSE progress; always consume it as a stream
+      // (api.deletePipeline's response.json() would choke on the "data:" lines).
+      await api.deletePipelineStream(pipelineName, onLog ?? (() => {}))
       loadedIframes.value.delete(pipelineName)
       startingPipelines.value.delete(pipelineName)
       stoppingPipelines.value.delete(pipelineName)

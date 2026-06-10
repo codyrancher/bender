@@ -53,6 +53,8 @@ export interface PipelineStageRecord {
 
 export interface PipelineRun {
   id: number
+  // Per-pipeline run ordinal for display (#1, #2, …); `id` stays global for API calls.
+  run_number?: number
   pipeline: string
   status: RunStatus
   started_at: string | null

@@ -60,10 +60,8 @@ export const api = {
     return fetchJSON(`${API_BASE}/reprovision/${pipeline}`, { method: 'POST' })
   },
 
-  async deletePipeline(pipeline: string): Promise<{ status: string; pipeline: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}`, { method: 'DELETE' })
-  },
-
+  // Note: the DELETE endpoint streams SSE progress — use deletePipelineStream
+  // (response.json() would choke on the "data:" lines).
   async deletePipelineStream(
     pipeline: string,
     onLog: (message: string) => void,

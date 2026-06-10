@@ -178,6 +178,11 @@ function isRunActive(pipeline: string): boolean {
   return latestRun(pipeline)?.status === 'running'
 }
 
+// Per-pipeline run ordinal for display; falls back to the global id.
+function runNo(run: { run_number?: number; id: number }): number {
+  return run.run_number ?? run.id
+}
+
 // Run button doubles as a cancel toggle while a run is in flight
 async function toggleRun(pipeline: string, e: Event) {
   e.stopPropagation()
@@ -350,7 +355,7 @@ function viewPipelineMdSnapshot(pipeline: string, run: PipelineRun, e: Event) {
   fileViewer.value = {
     name: 'pipeline.md',
     url: `/api/pipelines/${pipeline}/runs/${run.id}/pipeline-md`,
-    subtitle: `run #${run.id} · read-only snapshot`,
+    subtitle: `run #${runNo(run)} · read-only snapshot`,
   }
 }
 
@@ -360,7 +365,7 @@ function viewSkillSnapshot() {
   fileViewer.value = {
     name: 'SKILL.md',
     url: `/api/pipelines/${sd.pipeline}/runs/${sd.run.id}/stages/${sd.stageIndex}/skill-md`,
-    subtitle: `${sd.defStage?.skill || sd.record?.skill} · run #${sd.run.id} · read-only snapshot`,
+    subtitle: `${sd.defStage?.skill || sd.record?.skill} · run #${runNo(sd.run)} · read-only snapshot`,
   }
 }
 
@@ -582,7 +587,7 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
             >
               <div class="run-summary">
                 <div class="run-status-dot" :style="{ background: statusColor(run.status) }"></div>
-                <span class="run-id">#{{ run.id }}</span>
+                <span class="run-id">#{{ runNo(run) }}</span>
                 <span class="run-status-text" :class="run.status">{{ run.status }}</span>
                 <button
                   class="run-md-btn"
@@ -640,7 +645,7 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
     >
       <template #title>
         <h3 class="detail-title-h">{{ stageDetail.defStage?.name || stageDetail.record?.stage_name }}</h3>
-        <span class="detail-pipeline">{{ stageDetail.pipeline }}<template v-if="stageDetail.run"> · run #{{ stageDetail.run.id }}</template></span>
+        <span class="detail-pipeline">{{ stageDetail.pipeline }}<template v-if="stageDetail.run"> · run #{{ runNo(stageDetail.run) }}</template></span>
       </template>
 
       <div class="detail-body">

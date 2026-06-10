@@ -14,6 +14,10 @@ const COMPOSE_PROJECT = 'bender';
 // into every pipeline container as /claude-data). Pointing CLAUDE_CONFIG_DIR here
 // means a single sign-in authenticates every pipeline run.
 const CLAUDE_CONFIG_DIR = '/claude-data';
+// Hard cap on a single stage's Claude run, so a stage blocked indefinitely
+// (e.g. wait-for-sidecars waiting on a sidecar endpoint that never comes up)
+// fails with a clear message instead of hanging the whole pipeline forever.
+const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS) || 20 * 60 * 1000;
 const BENDER_IMAGE = 'bender-claude';
 const NETWORK_NAME = 'bender_default';
 const DATA_DIR = '/data';
@@ -1324,6 +1328,45 @@ export function registerRoutes(app: Express): void {
     return { met: /pass/i.test(last[1]), reason: (last[2] || '').trim() };
   }
 
+  // Short, human-readable summary of a tool_use block for the live log.
+  function toolSummary(b: any): string {
+    const inp = b?.input || {};
+    if (b?.name === 'Bash' && inp.command) return `: ${String(inp.command).split('\n')[0].slice(0, 160)}`;
+    if (inp.file_path) return `: ${inp.file_path}`;
+    if (inp.path) return `: ${inp.path}`;
+    if (inp.pattern) return `: ${inp.pattern}`;
+    if (inp.url) return `: ${inp.url}`;
+    return '';
+  }
+
+  // Turn one `claude --output-format stream-json` event into a log line (or null).
+  function formatStreamEvent(evt: any): string | null {
+    if (!evt || typeof evt !== 'object') return null;
+    if (evt.type === 'system' && evt.subtype === 'init') {
+      return `[claude] model ${evt.model || '?'} · ${(evt.tools || []).length} tools`;
+    }
+    if (evt.type === 'assistant' && evt.message?.content) {
+      const parts: string[] = [];
+      for (const b of evt.message.content) {
+        if (b.type === 'text' && b.text?.trim()) parts.push(b.text.trim());
+        else if (b.type === 'tool_use') parts.push(`→ ${b.name}${toolSummary(b)}`);
+      }
+      return parts.length ? parts.join('\n') : null;
+    }
+    if (evt.type === 'user' && evt.message?.content) {
+      for (const b of evt.message.content) {
+        if (b.type === 'tool_result') {
+          const c = typeof b.content === 'string'
+            ? b.content
+            : Array.isArray(b.content) ? b.content.map((x: any) => x?.text || '').join('') : '';
+          const firstLine = (c || '').split('\n').find((l: string) => l.trim()) || '';
+          return firstLine ? `  ⎿ ${firstLine.slice(0, 200)}` : null;
+        }
+      }
+    }
+    return null;
+  }
+
   // Classify and copy the files a stage wrote into $STAGE_ARTIFACTS over to the
   // served artifact dir, producing artifact records the UI can render.
   function collectArtifacts(project: string, runId: number, stageIndex: number, srcDir: string): any[] {
@@ -1400,6 +1443,10 @@ export function registerRoutes(app: Express): void {
 
     const prompt = buildStagePrompt(stage, wsArtifacts);
 
+    // Stream Claude's reasoning/tool-use live via stream-json (plain -p only
+    // prints the final result once, at the very end — no live logs).
+    let finalText = '';
+    let timedOut = false;
     const exitCode = await new Promise<number>((resolve) => {
       const p = spawn('docker', [
         'exec', '-u', '1000:1000',
@@ -1408,26 +1455,55 @@ export function registerRoutes(app: Express): void {
         '-e', `STAGE_PROMPT=${prompt}`,
         container,
         'bash', '-lc',
-        'mkdir -p "$STAGE_ARTIFACTS"; cd /workspace && claude --dangerously-skip-permissions -p "$STAGE_PROMPT" 2>&1',
+        'mkdir -p "$STAGE_ARTIFACTS"; cd /workspace && claude --dangerously-skip-permissions --output-format stream-json --verbose -p "$STAGE_PROMPT" 2>&1',
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
       let lastFlush = Date.now();
-      const onData = (d: Buffer) => {
-        logs += '\n' + d.toString().replace(/\s+$/, '');
+      let buffer = '';
+      const append = (line: string) => {
+        logs += '\n' + line;
         const now = Date.now();
-        if (now - lastFlush > 1000) { lastFlush = now; persist(); broadcast('pipeline-run-changed', { pipeline, runId }); }
+        if (now - lastFlush > 800) { lastFlush = now; persist(); broadcast('pipeline-run-changed', { pipeline, runId }); }
+      };
+      const handleLine = (raw: string) => {
+        const line = raw.trim();
+        if (!line) return;
+        if (line.startsWith('{')) {
+          try {
+            const evt = JSON.parse(line);
+            if (evt.type === 'result' && typeof evt.result === 'string') finalText = evt.result;
+            const formatted = formatStreamEvent(evt);
+            if (formatted) append(formatted);
+            return;
+          } catch { /* fall through: not a complete JSON line */ }
+        }
+        append(line); // plain text (e.g. "Not logged in") or unparseable line
+      };
+      const onData = (d: Buffer) => {
+        buffer += d.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const l of lines) handleLine(l);
       };
       p.stdout?.on('data', onData);
       p.stderr?.on('data', onData);
 
-      const killTimer = setInterval(() => { if (ctrl.cancelled) { try { p.kill('SIGKILL'); } catch { /* ignore */ } } }, 500);
+      const deadline = Date.now() + STAGE_TIMEOUT_MS;
+      const killTimer = setInterval(() => {
+        if (ctrl.cancelled) { try { p.kill('SIGKILL'); } catch { /* ignore */ } }
+        else if (Date.now() > deadline) {
+          timedOut = true;
+          append(`[${ts()}] Stage timed out after ${Math.round(STAGE_TIMEOUT_MS / 60000)}m — terminating Claude.`);
+          try { p.kill('SIGKILL'); } catch { /* ignore */ }
+        }
+      }, 1000);
       p.on('error', (e) => { logs += `\n[exec error] ${e.message}`; clearInterval(killTimer); resolve(1); });
-      p.on('close', (code) => { clearInterval(killTimer); resolve(code ?? 1); });
+      p.on('close', (code) => { if (buffer.trim()) handleLine(buffer); clearInterval(killTimer); resolve(code ?? 1); });
     });
 
     if (ctrl.cancelled) return 'cancelled';
 
-    const verdict = parseVerdict(logs);
+    const verdict = parseVerdict(finalText || logs);
     const artifacts = collectArtifacts(pipeline, runId, idx, hostArtifacts);
     const endISO = new Date().toISOString();
     const durationMs = new Date(endISO).getTime() - new Date(startISO).getTime();
@@ -1437,7 +1513,11 @@ export function registerRoutes(app: Express): void {
     let status: 'completed' | 'failed';
     let criteriaMet: boolean;
     let errMsg: string | null = null;
-    if (exitCode !== 0) {
+    if (timedOut) {
+      status = 'failed';
+      criteriaMet = false;
+      errMsg = `Stage timed out after ${Math.round(STAGE_TIMEOUT_MS / 60000)}m — Claude did not finish (often blocked waiting on a sidecar endpoint that never became ready).`;
+    } else if (exitCode !== 0) {
       status = 'failed';
       criteriaMet = false;
       errMsg = `Claude exited with code ${exitCode}${verdict.reason ? ` — ${verdict.reason}` : ''}`;
@@ -1468,6 +1548,10 @@ export function registerRoutes(app: Express): void {
     const records = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId) as any[];
     const N = records.length;
     if (!N) { finalizeRun(runId, pipeline, 'completed'); return; }
+
+    // Proactively bring up the pipeline's sidecars (rancher takes minutes to
+    // boot) so they're ready by the time a stage's skill calls wait-for-sidecars.
+    try { startSidecars(pipeline); } catch { /* best effort */ }
 
     const next: number[][] = records.map(r => {
       try { return (JSON.parse(r.next_indices || '[]') as number[]).filter(j => j >= 0 && j < N); }
@@ -1547,7 +1631,8 @@ export function registerRoutes(app: Express): void {
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
       const runs = db.prepare(
-        'SELECT * FROM pipeline_runs WHERE pipeline = ? ORDER BY id DESC LIMIT ? OFFSET ?'
+        `SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number
+         FROM pipeline_runs WHERE pipeline = ? ORDER BY id DESC LIMIT ? OFFSET ?`
       ).all(req.params.name, limit, offset) as any[];
 
       const countRow = db.prepare(
@@ -1662,7 +1747,7 @@ export function registerRoutes(app: Express): void {
       });
       insertMany();
 
-      const run = db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').get(runId);
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stageRecords = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
 
       broadcast('pipeline-run-changed', { pipeline, runId });
@@ -1750,7 +1835,7 @@ export function registerRoutes(app: Express): void {
         ).run('failed', now, runId);
       }
 
-      const updatedRun = db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').get(runId);
+      const updatedRun = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stageRecords = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
 
       broadcast('pipeline-run-changed', { pipeline: req.params.name, runId: Number(runId) });
@@ -1782,7 +1867,7 @@ export function registerRoutes(app: Express): void {
       const db = getRunsDb();
       const runId = Number(req.params.runId);
       cancelRun(runId, req.params.name);
-      const run = db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').get(runId);
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stages = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
       res.json({ run: { ...run as any, stages } });
     } catch (err) {
@@ -1884,7 +1969,7 @@ export function registerRoutes(app: Express): void {
       broadcast('pipeline-run-changed', { pipeline, runId });
       startExecution(runId, pipeline);
 
-      const run = db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').get(runId);
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stages = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
       res.json({ run: { ...run as any, stages } });
     } catch (err) {

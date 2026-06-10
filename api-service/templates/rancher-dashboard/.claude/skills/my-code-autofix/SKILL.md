@@ -87,7 +87,7 @@ Derived from the project name (do not ask the user):
 4. **Tell the user it's queued and where to watch.** One line each:
 
    - "Auto-fix queued for `<project>` (issue #<N>) — fires once init.sh finishes (~5 min for a fresh project)."
-   - "Watch live: `tail -f /data/projects/<project>/auto.logs`"
+   - "Watch live: `tail -f /data/pipelines/<project>/auto.logs`"
 
    For PR projects, add: "Review sits in PENDING when complete — user submits/discards from Files Changed."
 

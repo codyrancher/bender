@@ -2,7 +2,6 @@
   "name": "Rancher Dashboard",
   "description": "Rancher dev environment",
   "keys": [
-    { "id": "figmaApiKey", "label": "Figma API Key", "description": "Personal access token for Figma MCP server" },
     { "id": "appcoEmail", "label": "AppCo Email", "description": "Email address for AppCo OCI registry authentication", "isText": true, "placeholder": "user@example.com" },
     { "id": "appcoToken", "label": "AppCo Access Token", "description": "Access token for AppCo OCI registry authentication" },
     { "id": "rancherTag", "label": "Rancher Tag", "description": "Default Rancher image tag (e.g. head, v2.10-head)", "isText": true, "placeholder": "head" }
@@ -15,6 +14,8 @@
         "CATTLE_BOOTSTRAP_PASSWORD": "{{harness.adminPassword}}"
       },
       "privileged": true,
+      "entrypoint": "bash",
+      "command": ["-c", "mkdir -p /etc/rancher/k3s && printf 'snapshotter: native\n' > /etc/rancher/k3s/config.yaml && exec /usr/bin/entrypoint.sh"],
       "volumes": [
         "/data/rancher-data/{{projectName}}:/var/lib/rancher"
       ]
@@ -26,7 +27,7 @@
       "network_container": true,
       "entrypoint": "bash",
       "volumes": [
-        "/data/projects/{{projectName}}/browser-ext:/opt/autofill-ext:ro"
+        "/data/pipelines/{{projectName}}/browser-ext:/opt/autofill-ext:ro"
       ],
       "env": {
         "PUID": "1000",
@@ -37,13 +38,6 @@
         "CHROME_CLI": "https://{{projectName}}-rancher https://localhost:8005 --no-first-run --start-maximized --disable-infobars --allow-insecure-localhost --ignore-certificate-errors --force-dark-mode --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 --load-extension=/opt/autofill-ext"
       },
       "command": ["-c", "mkdir -p /etc/chromium/policies/managed && echo '{\"ExtensionInstallForcelist\":[\"nhdogjmejiglipccpnnnanhbledajbpd;https://clients2.google.com/service/update2/crx\"]}' > /etc/chromium/policies/managed/extensions.json && exec /init"]
-    },
-    {
-      "suffix": "figma",
-      "image": "acuvity/mcp-server-figma:latest",
-      "env": {
-        "FIGMA_API_KEY": "{{settings.figmaApiKey}}"
-      }
     }
   ]
 }
