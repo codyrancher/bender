@@ -1,0 +1,42 @@
+#!/bin/bash
+# Amend the last commit's message, opening it in the VS Code tab you're in.
+# Usage: git-fix-commit
+#
+# Uses `code --wait` when the openvscode-server integrated terminal is detected
+# (VSCODE_IPC_HOOK_CLI is set). Falls back to $EDITOR, then to nano.
+
+set -e
+
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "git-fix-commit: not a git repository (cwd: $(pwd))" >&2
+  exit 1
+fi
+
+if ! git log -1 >/dev/null 2>&1; then
+  echo "git-fix-commit: no commits yet" >&2
+  exit 1
+fi
+
+MSG_FILE=$(mktemp -t commit-msg.XXXXXX)
+trap 'rm -f "$MSG_FILE"' EXIT
+
+git log -1 --pretty=%B > "$MSG_FILE"
+ORIG_HASH=$(sha256sum "$MSG_FILE" | cut -d' ' -f1)
+
+if command -v code >/dev/null 2>&1 && [ -n "$VSCODE_IPC_HOOK_CLI" ]; then
+  echo "Opening commit message in VS Code..."
+  code --wait "$MSG_FILE"
+elif [ -n "$EDITOR" ]; then
+  "$EDITOR" "$MSG_FILE"
+else
+  ${VISUAL:-nano} "$MSG_FILE"
+fi
+
+NEW_HASH=$(sha256sum "$MSG_FILE" | cut -d' ' -f1)
+if [ "$ORIG_HASH" = "$NEW_HASH" ]; then
+  echo "git-fix-commit: message unchanged, nothing to do"
+  exit 0
+fi
+
+git commit --amend -F "$MSG_FILE" --cleanup=strip
+echo "Commit message updated."

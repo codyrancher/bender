@@ -1,0 +1,18 @@
+{
+  "name": "Vue 3 Hello World",
+  "description": "TypeScript Vue 3 app with Vite dev server",
+  "sidecars": [
+    {
+      "suffix": "browser",
+      "image": "lscr.io/linuxserver/chromium:latest",
+      "shm_size": "1gb",
+      "network_container": true,
+      "env": {
+        "PUID": "1000",
+        "PGID": "1000",
+        "CUSTOM_PORT": "3000",
+        "CHROME_CLI": "http://localhost:5173 --no-first-run --start-maximized --disable-infobars --allow-insecure-localhost --ignore-certificate-errors --force-dark-mode"
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "model": "claude-opus-4-6",
+  "permissions": {
+    "allow": [
+      "Bash(npx cypress run:*)",
+      "Bash(npx cypress:*)",
+      "Bash(yarn cypress:*)",
+      "Bash(./node_modules/.bin/cypress:*)",
+      "Bash(./node_modules/.bin/eslint:*)",
+      "Bash(yarn lint:*)",
+      "Bash(yarn test:*)",
+      "Bash(ss:*)",
+      "Bash(lsof:*)",
+      "Bash(apt-get install:*)",
+      "Bash(sudo apt-get install:*)"
+    ]
+  }
+}

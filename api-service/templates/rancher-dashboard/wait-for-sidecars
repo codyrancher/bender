@@ -1,0 +1,65 @@
+#!/bin/bash
+# Block until the project's sidecar endpoints are reachable, then exit 0.
+# Exits non-zero on timeout. Safe to call whether sidecars are already up,
+# just starting, or not started yet (this script starts them if needed).
+#
+# Usage:
+#   wait-for-sidecars              # wait for browser (CDP) + rancher
+#   wait-for-sidecars browser      # wait for browser only
+#   wait-for-sidecars rancher      # wait for rancher only
+#   TIMEOUT=120 wait-for-sidecars  # override timeout seconds (default 180)
+
+set -e
+TIMEOUT="${TIMEOUT:-180}"
+TARGETS="${*:-browser rancher}"
+
+if [ -z "$HARNESS_API" ] || [ -z "$HARNESS_PROJECT" ]; then
+  echo "wait-for-sidecars: HARNESS_API / HARNESS_PROJECT not set" >&2
+  exit 2
+fi
+
+# Ensure sidecars are at least asked to start. Idempotent — safe if already up.
+curl -s -X POST "$HARNESS_API/sidecars/start/$HARNESS_PROJECT" >/dev/null || true
+
+check_browser() {
+  # CDP responds with JSON including "webSocketDebuggerUrl" once chromium is ready.
+  curl -sf --max-time 2 http://localhost:9222/json/version >/dev/null 2>&1
+}
+
+check_rancher() {
+  # Rancher's /ping returns "pong" once it's accepting requests.
+  curl -ksf --max-time 2 "https://${HARNESS_PROJECT}-rancher/ping" >/dev/null 2>&1
+}
+
+end=$(( $(date +%s) + TIMEOUT ))
+remaining() {
+  local r=$(( end - $(date +%s) ))
+  [ "$r" -lt 0 ] && echo 0 || echo "$r"
+}
+
+for target in $TARGETS; do
+  case "$target" in
+    browser)
+      echo "[wait-for-sidecars] waiting for browser CDP on :9222..."
+      while ! check_browser; do
+        [ "$(remaining)" -le 0 ] && { echo "[wait-for-sidecars] TIMEOUT (browser)" >&2; exit 1; }
+        sleep 2
+      done
+      echo "[wait-for-sidecars] browser ready"
+      ;;
+    rancher)
+      echo "[wait-for-sidecars] waiting for rancher API on ${HARNESS_PROJECT}-rancher..."
+      while ! check_rancher; do
+        [ "$(remaining)" -le 0 ] && { echo "[wait-for-sidecars] TIMEOUT (rancher)" >&2; exit 1; }
+        sleep 2
+      done
+      echo "[wait-for-sidecars] rancher ready"
+      ;;
+    *)
+      echo "[wait-for-sidecars] unknown target: $target" >&2
+      exit 2
+      ;;
+  esac
+done
+
+echo "[wait-for-sidecars] all ready"

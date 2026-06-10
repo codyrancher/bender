@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1a1e2e"/>
+      <stop offset="100%" stop-color="#141828"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="50" y1="30" x2="150" y2="170" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8b6cc0"/>
+      <stop offset="100%" stop-color="#6a5aaa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="200" height="200" rx="32" fill="url(#bg)"/>
+
+  <!-- Shield hexagon outline -->
+  <path d="M100 28 L158 58 L158 118 L100 172 L42 118 L42 58 Z"
+        fill="none" stroke="url(#shield)" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- Network connection lines -->
+  <g stroke="#5a5880" stroke-width="1.5" opacity="0.6">
+    <line x1="100" y1="72" x2="78" y2="100"/>
+    <line x1="100" y1="72" x2="122" y2="100"/>
+    <line x1="78" y1="100" x2="122" y2="100"/>
+    <line x1="78" y1="100" x2="68" y2="130"/>
+    <line x1="122" y1="100" x2="132" y2="130"/>
+    <line x1="100" y1="72" x2="130" y2="60"/>
+    <line x1="100" y1="72" x2="70" y2="60"/>
+    <line x1="78" y1="100" x2="56" y2="82"/>
+    <line x1="122" y1="100" x2="144" y2="82"/>
+    <line x1="68" y1="130" x2="100" y2="142"/>
+    <line x1="132" y1="130" x2="100" y2="142"/>
+  </g>
+
+  <!-- Network nodes -->
+  <!-- Center node (purple/mauve) -->
+  <circle cx="100" cy="72" r="8" fill="#c07ab8"/>
+  <!-- Left mid (green/teal) -->
+  <circle cx="78" cy="100" r="7" fill="#4db8a8"/>
+  <!-- Right mid (green/teal) -->
+  <circle cx="122" cy="100" r="7" fill="#4db8a8"/>
+  <!-- Top left (orange) -->
+  <circle cx="70" cy="60" r="5" fill="#e8885c"/>
+  <!-- Top right (orange) -->
+  <circle cx="130" cy="60" r="5" fill="#e8885c"/>
+  <!-- Left outer (orange) -->
+  <circle cx="56" cy="82" r="4.5" fill="#e8885c"/>
+  <!-- Right outer (green) -->
+  <circle cx="144" cy="82" r="4.5" fill="#4db8a8"/>
+  <!-- Bottom left (purple) -->
+  <circle cx="68" cy="130" r="5.5" fill="#9070c0"/>
+  <!-- Bottom right (purple) -->
+  <circle cx="132" cy="130" r="5.5" fill="#9070c0"/>
+  <!-- Bottom center (orange) -->
+  <circle cx="100" cy="142" r="5" fill="#e8885c"/>
+</svg>

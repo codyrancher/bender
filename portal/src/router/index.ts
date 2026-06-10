@@ -1,0 +1,97 @@
+import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
+import { defineComponent } from 'vue'
+
+export type ViewMode = 'vscode' | 'browser' | 'split'
+
+// Empty component since App.vue handles all the rendering
+const EmptyComponent = defineComponent({
+  render: () => null,
+})
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL || '/'),
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      component: EmptyComponent,
+    },
+    {
+      path: '/:pipelineId/vscode',
+      name: 'vscode',
+      component: EmptyComponent,
+      meta: { view: 'vscode' as ViewMode },
+    },
+    {
+      path: '/:pipelineId/browser',
+      name: 'browser',
+      component: EmptyComponent,
+      meta: { view: 'browser' as ViewMode },
+    },
+    {
+      path: '/:pipelineId/split',
+      name: 'split',
+      component: EmptyComponent,
+      meta: { view: 'split' as ViewMode },
+    },
+    {
+      path: '/harness/vscode',
+      name: 'harness',
+      component: EmptyComponent,
+      meta: { view: 'vscode' as ViewMode, harness: true },
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: EmptyComponent,
+    },
+    {
+      path: '/settings/template/:templateId',
+      name: 'template-editor',
+      component: EmptyComponent,
+      meta: { view: 'vscode' as ViewMode },
+    },
+    {
+      path: '/insights',
+      name: 'insights',
+      component: EmptyComponent,
+    },
+    {
+      path: '/definitions',
+      name: 'definitions',
+      component: EmptyComponent,
+    },
+    {
+      path: '/cli',
+      name: 'cli',
+      component: EmptyComponent,
+    },
+    {
+      // Catch-all redirect
+      path: '/:pathMatch(.*)*',
+      redirect: '/',
+    },
+  ],
+})
+
+export function getPipelineIdFromRoute(route: RouteLocationNormalized): string | null {
+  return (route.params.pipelineId as string) || null
+}
+
+export function getViewModeFromRoute(route: RouteLocationNormalized): ViewMode {
+  return (route.meta.view as ViewMode) || 'vscode'
+}
+
+export function isHarnessRoute(route: RouteLocationNormalized): boolean {
+  return route.meta.harness === true
+}
+
+export function isTemplateEditorRoute(route: RouteLocationNormalized): boolean {
+  return route.name === 'template-editor'
+}
+
+export function getTemplateIdFromRoute(route: RouteLocationNormalized): string | null {
+  return (route.params.templateId as string) || null
+}
+
+export default router

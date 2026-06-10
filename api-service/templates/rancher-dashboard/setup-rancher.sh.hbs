@@ -1,0 +1,194 @@
+#!/bin/bash
+# Wait for Rancher to be ready and configure credentials
+
+RANCHER_URL="https://{{projectName}}-rancher"
+ADMIN_PASSWORD="{{{adminPassword}}}"
+
+echo "=== Rancher Setup ==="
+echo "Rancher URL: ${RANCHER_URL}"
+
+# Helper to parse JSON
+parse_json() {
+    local json="$1"
+    local field="$2"
+    echo "$json" | node -p "try { JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).$field || '' } catch(e) { '' }"
+}
+
+# Wait for Rancher API
+echo "Waiting for Rancher API..."
+MAX_ATTEMPTS=120
+ATTEMPT=0
+
+while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" "${RANCHER_URL}/v3/" 2>/dev/null)
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+        echo "Rancher API is responding (HTTP $HTTP_CODE)"
+        break
+    fi
+    ATTEMPT=$((ATTEMPT + 1))
+    if [ $((ATTEMPT % 12)) -eq 0 ]; then
+        echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: Rancher not ready yet (HTTP $HTTP_CODE)..."
+    fi
+    sleep 5
+done
+
+if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+    echo "ERROR: Rancher did not become ready in time"
+    exit 1
+fi
+
+sleep 5
+
+# Login
+echo "Logging in as admin..."
+TOKEN=""
+LOGIN_ATTEMPTS=0
+MAX_LOGIN_ATTEMPTS=10
+
+while [ -z "$TOKEN" ] && [ $LOGIN_ATTEMPTS -lt $MAX_LOGIN_ATTEMPTS ]; do
+    LOGIN_ATTEMPTS=$((LOGIN_ATTEMPTS + 1))
+    echo "Login attempt ${LOGIN_ATTEMPTS}/${MAX_LOGIN_ATTEMPTS}..."
+
+    LOGIN_RESPONSE=$(curl -sk "${RANCHER_URL}/v3-public/localProviders/local?action=login" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}" 2>&1)
+
+    if echo "$LOGIN_RESPONSE" | grep -q '"token"'; then
+        TOKEN=$(parse_json "$LOGIN_RESPONSE" "token")
+    fi
+
+    if [ -z "$TOKEN" ]; then
+        echo "  Login failed, retrying..."
+        sleep 10
+    fi
+done
+
+if [ -z "$TOKEN" ]; then
+    echo "ERROR: Failed to get login token"
+    exit 1
+fi
+
+echo "Successfully logged in!"
+
+# Set first-login to false
+echo "Setting first-login to false..."
+curl -sk "${RANCHER_URL}/v3/settings/first-login" \
+    -X PUT \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"value": "false"}' > /dev/null 2>&1
+
+{{#if rancherPublicUrl}}
+# Set server-url for external access
+echo "Setting server-url to {{{rancherPublicUrl}}}..."
+curl -sk "${RANCHER_URL}/v3/settings/server-url" \
+    -X PUT \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"value": "{{{rancherPublicUrl}}}"}' > /dev/null 2>&1
+{{else}}
+# Clear server-url so dashboard uses window.location.origin
+echo "Clearing server-url..."
+curl -sk "${RANCHER_URL}/v3/settings/server-url" \
+    -X PUT \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"value": ""}' > /dev/null 2>&1
+{{/if}}
+
+# Set agent-tls-mode
+echo "Setting agent-tls-mode..."
+curl -sk "${RANCHER_URL}/v3/settings/agent-tls-mode" \
+    -X PUT \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"value": "system-store"}' > /dev/null 2>&1
+
+# Create standard users
+echo "Creating standard users..."
+
+create_user() {
+    local USERNAME="$1"
+    local PASSWORD="$2"
+    local DISPLAY_NAME="$3"
+
+    echo "Creating user: ${USERNAME}..."
+    USER_RESULT=$(curl -sk "${RANCHER_URL}/v3/users" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"type\": \"user\",
+            \"username\": \"${USERNAME}\",
+            \"password\": \"${PASSWORD}\",
+            \"name\": \"${DISPLAY_NAME}\",
+            \"mustChangePassword\": false,
+            \"enabled\": true
+        }" 2>&1)
+
+    USER_ID=$(parse_json "$USER_RESULT" "id")
+    if [ -n "$USER_ID" ]; then
+        curl -sk "${RANCHER_URL}/v3/globalrolebindings" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"type\":\"globalRoleBinding\",\"globalRoleId\":\"user\",\"userId\":\"${USER_ID}\"}" > /dev/null 2>&1
+        echo "  User ${USERNAME} created with user role"
+    else
+        echo "  Failed to create user ${USERNAME}"
+    fi
+}
+
+create_user "user1" "{{{userPassword1}}}" "User One"
+create_user "user2" "{{{userPassword2}}}" "User Two"
+create_user "user3" "{{{userPassword3}}}" "User Three"
+
+# Create AWS cloud credential (only if creds are present in the environment).
+# Credentials are read from env vars — never hard-coded into this file.
+if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${AWS_SECRET_ACCESS_KEY}" ]; then
+    echo "Creating AWS cloud credential..."
+    CRED_RESULT=$(curl -sk "${RANCHER_URL}/v3/cloudcredentials" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"type\": \"cloudCredential\",
+            \"name\": \"aws-credential\",
+            \"amazonec2credentialConfig\": {
+                \"accessKey\": \"${AWS_ACCESS_KEY_ID}\",
+                \"secretKey\": \"${AWS_SECRET_ACCESS_KEY}\",
+                \"defaultRegion\": \"${AWS_DEFAULT_REGION:-us-west-2}\"
+            }
+        }" 2>&1)
+
+    if echo "$CRED_RESULT" | grep -q '"name":"aws-credential"'; then
+        echo "  AWS credential created"
+    else
+        echo "  AWS credential response: $(echo "$CRED_RESULT" | head -c 200)"
+    fi
+else
+    echo "Skipping AWS cloud credential (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set)"
+fi
+
+# Create DigitalOcean cloud credential (only if a token is present in the environment).
+if [ -n "${DIGITALOCEAN_ACCESS_TOKEN}" ]; then
+    echo "Creating DigitalOcean cloud credential..."
+    DO_CRED_RESULT=$(curl -sk "${RANCHER_URL}/v3/cloudcredentials" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"type\": \"cloudCredential\",
+            \"name\": \"digitalocean-credential\",
+            \"digitaloceancredentialConfig\": {
+                \"accessToken\": \"${DIGITALOCEAN_ACCESS_TOKEN}\"
+            }
+        }" 2>&1)
+
+    if echo "$DO_CRED_RESULT" | grep -q '"name":"digitalocean-credential"'; then
+        echo "  DigitalOcean credential created"
+    else
+        echo "  DigitalOcean credential response: $(echo "$DO_CRED_RESULT" | head -c 200)"
+    fi
+else
+    echo "Skipping DigitalOcean cloud credential (DIGITALOCEAN_ACCESS_TOKEN not set)"
+fi
+
+echo "=== Rancher Setup Complete ==="
+touch /workspace/.rancher-setup-done

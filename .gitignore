@@ -1,0 +1,19 @@
+# Environment / secrets
+.env
+
+# Portal build artifacts
+portal/node_modules/
+portal/dist/
+portal/*.tsbuildinfo
+
+# API service build artifacts
+api-service/node_modules/
+api-service/dist/
+api-service/claude-harness/
+
+# Local data
+pipelines/
+.credentials/
+.config/
+.cli/
+.browser-profile/

@@ -1,0 +1,93 @@
+#!/bin/bash
+# Runs before project deletion — cleans up Rancher-managed clusters
+
+RANCHER_URL="https://{{projectName}}-rancher"
+ADMIN_PASSWORD="{{{adminPassword}}}"
+TIMEOUT=300  # 5 minutes max
+
+parse_json() {
+    local json="$1"
+    local field="$2"
+    echo "$json" | node -p "try { JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).$field || '' } catch(e) { '' }"
+}
+
+# Check if Rancher is reachable
+echo "Checking Rancher API..."
+HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" "${RANCHER_URL}/v3" 2>/dev/null)
+if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "401" ]; then
+    echo "Rancher API not reachable (HTTP $HTTP_CODE), skipping cluster cleanup"
+    exit 0
+fi
+
+# Login
+echo "Logging in to Rancher..."
+LOGIN_RESPONSE=$(curl -sk "${RANCHER_URL}/v3-public/localProviders/local?action=login" \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}" 2>&1)
+
+TOKEN=$(parse_json "$LOGIN_RESPONSE" "token")
+if [ -z "$TOKEN" ]; then
+    echo "Failed to login, skipping cluster cleanup"
+    exit 0
+fi
+
+# List non-local clusters
+echo "Checking for provisioned clusters..."
+CLUSTERS_RESPONSE=$(curl -sk "${RANCHER_URL}/v3/clusters" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Accept: application/json" 2>&1)
+
+CLUSTER_IDS=$(echo "$CLUSTERS_RESPONSE" | node -p "
+try {
+    const d = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+    (d.data || []).filter(c => c.id !== 'local').map(c => c.id + '|' + c.name).join('\n');
+} catch(e) { '' }
+")
+
+if [ -z "$CLUSTER_IDS" ]; then
+    echo "No clusters to clean up"
+    exit 0
+fi
+
+# Count and list clusters
+CLUSTER_COUNT=$(echo "$CLUSTER_IDS" | wc -l)
+echo "Found ${CLUSTER_COUNT} cluster(s) to delete"
+
+# Delete each cluster
+echo "$CLUSTER_IDS" | while IFS='|' read -r CID CNAME; do
+    [ -z "$CID" ] && continue
+    echo "Deleting cluster: ${CNAME} (${CID})..."
+    curl -sk -X DELETE "${RANCHER_URL}/v3/clusters/${CID}" \
+        -H "Authorization: Bearer ${TOKEN}" > /dev/null 2>&1
+done
+
+# Wait for clusters to be removed
+echo "Waiting for clusters to be fully removed..."
+START_TIME=$(date +%s)
+
+while true; do
+    ELAPSED=$(( $(date +%s) - START_TIME ))
+    if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "Timeout waiting for cluster removal (${TIMEOUT}s). Proceeding with deletion."
+        break
+    fi
+
+    REMAINING=$(curl -sk "${RANCHER_URL}/v3/clusters" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Accept: application/json" 2>&1 | node -p "
+    try {
+        const d = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+        (d.data || []).filter(c => c.id !== 'local').length;
+    } catch(e) { 0 }
+    ")
+
+    if [ "$REMAINING" = "0" ]; then
+        echo "All clusters removed"
+        break
+    fi
+
+    echo "  ${REMAINING} cluster(s) still removing... (${ELAPSED}s elapsed)"
+    sleep 5
+done
+
+echo "Cluster cleanup complete"

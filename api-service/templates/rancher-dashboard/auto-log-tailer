@@ -1,0 +1,55 @@
+#!/bin/bash
+# Continuously stream the newest claude session transcript (JSONL) to
+# /workspace/auto.logs, in human-readable form. Started in the background
+# by init.sh and kept running for the lifetime of the container.
+#
+# Works regardless of how claude is invoked (with or without stream-json),
+# because claude always writes its session transcript to
+# ~/.claude/projects/<cwd-slug>/<session-id>.jsonl (symlinked into the
+# workspace by setup.sh).
+#
+# When a newer session JSONL appears, the tailer truncates auto.logs and
+# switches to streaming the new session.
+
+set -u
+LOG_FILE=/workspace/auto.logs
+TRANSCRIPTS=/workspace/.claude-local/projects
+FORMATTER=/workspace/bin/format-claude-stream
+PIDFILE=/workspace/.auto-log-tailer.pid
+
+# Single-instance guard.
+if [ -f "$PIDFILE" ]; then
+  OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
+  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    exit 0
+  fi
+fi
+echo $$ > "$PIDFILE"
+
+TAIL_PID=""
+cleanup() {
+  [ -n "$TAIL_PID" ] && kill "$TAIL_PID" 2>/dev/null || true
+  rm -f "$PIDFILE"
+}
+trap cleanup EXIT INT TERM
+
+find_newest() {
+  find "$TRANSCRIPTS" -type f -name '*.jsonl' -printf '%T@ %p\n' 2>/dev/null \
+    | sort -rn | head -1 | awk '{print $2}'
+}
+
+CURRENT=""
+while true; do
+  NEWEST=$(find_newest)
+  if [ -n "$NEWEST" ] && [ "$NEWEST" != "$CURRENT" ]; then
+    [ -n "$TAIL_PID" ] && kill "$TAIL_PID" 2>/dev/null || true
+    CURRENT="$NEWEST"
+    {
+      echo "[tailer] streaming $(basename "$CURRENT") (started $(date -Iseconds))"
+    } > "$LOG_FILE"
+    tail -n +1 --follow=name --retry "$CURRENT" 2>/dev/null \
+      | python3 -u "$FORMATTER" >> "$LOG_FILE" &
+    TAIL_PID=$!
+  fi
+  sleep 2
+done

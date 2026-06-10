@@ -1,0 +1,96 @@
+// Add user/password pairs here
+const CREDS = [
+  { label: 'Admin', username: 'admin', password: '{{{adminPassword}}}' },
+  { label: 'User 1', username: 'user1', password: '{{{userPassword1}}}' },
+  { label: 'User 2', username: 'user2', password: '{{{userPassword2}}}' },
+  { label: 'User 3', username: 'user3', password: '{{{userPassword3}}}' },
+];
+
+let bar = null;
+
+function createBar() {
+  if (bar) return bar;
+
+  bar = document.createElement('div');
+  bar.id = 'autofill-bar';
+
+  const label = document.createElement('span');
+  label.textContent = 'Quick Login:';
+  bar.appendChild(label);
+
+  const select = document.createElement('select');
+  select.id = 'autofill-select';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Select account\u2026';
+  select.appendChild(placeholder);
+
+  CREDS.forEach((cred, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = cred.label + ' (' + cred.username + ')';
+    select.appendChild(opt);
+  });
+
+  select.addEventListener('change', () => {
+    if (select.value === '') return;
+    const cred = CREDS[select.value];
+    fillForm(cred.username, cred.password);
+    bar.classList.remove('visible');
+    select.value = '';
+  });
+
+  bar.appendChild(select);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'close-btn';
+  closeBtn.textContent = '\u00d7';
+  closeBtn.addEventListener('click', () => bar.classList.remove('visible'));
+  bar.appendChild(closeBtn);
+
+  document.body.appendChild(bar);
+  return bar;
+}
+
+function fillForm(username, password) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  const u = document.querySelector('input[name="username"], input[type="text"]');
+  const p = document.querySelector('input[type="password"]');
+
+  if (u) {
+    setter.call(u, username);
+    u.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  if (p) {
+    setter.call(p, password);
+    p.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
+function isLoginPage() {
+  return location.pathname === '/auth/login' ||
+    location.pathname.startsWith('/dashboard/auth/login') ||
+    !!document.querySelector('form.login');
+}
+
+function attachListeners() {
+  if (!isLoginPage()) return;
+  const inputs = document.querySelectorAll(
+    'input[name="username"], input[type="text"], input[type="password"]'
+  );
+  inputs.forEach(el => {
+    if (el.dataset.autofillBound) return;
+    el.dataset.autofillBound = '1';
+    el.addEventListener('focus', () => {
+      createBar();
+      bar.classList.add('visible');
+    });
+  });
+}
+
+attachListeners();
+new MutationObserver(attachListeners).observe(document.body, {
+  childList: true,
+  subtree: true,
+});

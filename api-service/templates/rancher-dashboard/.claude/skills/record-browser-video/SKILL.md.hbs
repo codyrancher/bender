@@ -1,0 +1,147 @@
+---
+name: record-browser-video
+description: Record a smooth browser video against this project's Rancher instance. Iterate against the live UI to discover the exact action sequence, save it as a Playwright script, then play it back through `browser.mjs record-script` to capture a single uninterrupted recording. Use whenever capturing reproduction videos, fix demonstration videos, or any browser interaction recording.
+---
+
+Record a video of browser interaction against this project's Rancher instance. Videos are VP9 webm with an injected overlay (URL bar, cursor dot, click ripples, keystroke badges, URL change highlights).
+
+## Workflow: iterate → script → reset → record
+
+**Do not record while you're still figuring out the steps.** If you record live during exploration, every "what do I click next" pause becomes a multi-second dead zone in the video. Instead:
+
+1. **Iterate against the live UI** to discover the exact sequence of clicks/inputs/waits that produces the bug or demonstrates the fix. Use `browser.mjs --new-tab goto`, ad-hoc playwright-core scripts, or DOM inspection — whatever is fastest to converge on the correct sequence. **Don't record yet.**
+2. **Capture the sequence as a small Playwright script** at e.g. `/workspace/repro.mjs`. The script must default-export an `async ({page, ctx, startRecording}) => ...` function. Include the navigation that gets you to the start state — the script is responsible for everything from `goto` through the final assertion.
+3. **Verify the script reaches the goal end-to-end** by running it via `record-script` once. If a step fails, edit and re-run. Iterate until a single clean run produces what you want.
+4. **Reset state** if the script created/mutated Rancher resources that would prevent a clean re-run (delete the cluster you made, randomise resource names with `Date.now()`, etc.). Often this is unnecessary for read-only repros.
+5. **Final recording** — re-run with `record-script` against a fresh sidecar state. The video captures only the smooth scripted execution, no agent-thinking pauses.
+
+## The `record-script` command
+
+```bash
+# script default-exports async ({page, ctx, startRecording}) => { ... }
+node /workspace/browser.mjs record-script /workspace/repro.mjs /workspace/videos/before-fix.webm
+```
+
+Recording is **deferred** — frames are not saved until your script calls `startRecording()`. This keeps the initial page load (blank → spinner → content) out of the video. Call `startRecording()` after the page is loaded and ready, right before the first visible user action.
+
+Always uses a fresh tab so the user's open tabs are untouched.
+
+Save scripts and videos under `/workspace/videos/` (and keep the script next to its video — it's the source of truth for "what was recorded" and is easy to replay or tweak).
+
+### Script template
+
+```js
+// /workspace/repro.mjs
+export default async function ({ page, startRecording }) {
+  const MOVE_DELAY = 180  // cursor dot has a 150ms CSS transition
+
+  // --- Setup (not recorded) ------------------------------------------------
+  // Pin viewport to 1280x720. Without this the screencast captures at the
+  // device pixel ratio (often 3000+ px wide) and you get an unshareable webm.
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('https://{{projectName}}-rancher')
+  await page.waitForLoadState('networkidle')
+
+  // --- Start recording ------------------------------------------------------
+  startRecording()
+
+  // --- Visible interactions (recorded) --------------------------------------
+  // Login: move to each field, type character-by-character
+  const userInput = page.locator('input[name="username"]')
+  await userInput.hover()
+  await page.waitForTimeout(MOVE_DELAY)
+  await userInput.click()
+  await page.keyboard.type('admin', { delay: 60 })
+
+  const passInput = page.locator('input[name="password"]')
+  await passInput.hover()
+  await page.waitForTimeout(MOVE_DELAY)
+  await passInput.click()
+  await page.keyboard.type('password', { delay: 60 })
+
+  const submitBtn = page.locator('button[type="submit"]')
+  await submitBtn.hover()
+  await page.waitForTimeout(MOVE_DELAY)
+  await submitBtn.click()
+
+  await page.waitForURL(/\/dashboard/)
+  // ... rest of the repro
+}
+```
+
+## Before recording, ensure sidecars are up
+
+```bash
+wait-for-sidecars browser
+```
+
+The browser sidecar takes several seconds to boot, and CDP refuses connections until it is fully up. Skipping this leaves you with empty videos.
+
+## Quick fallback: live recording with fixed duration
+
+When you genuinely need a freeform recording (not from a script), the original mode still works:
+
+```bash
+node /workspace/browser.mjs record https://{{projectName}}-rancher /workspace/videos/freeform.webm 15000
+```
+
+`<url> <out.webm> [durationMs]`. Default duration 10s. Avoid for reproductions — pauses in your driving show up as pauses in the video.
+
+## CRITICAL: every interaction needs mouse movement
+
+The overlay's cursor dot has a 150ms CSS transition. **Every click, fill, or type MUST be preceded by moving the mouse to the target and waiting for the transition.** If Playwright fires mousedown without a prior `page.mouse.move()` or `.hover()`, the cursor dot stays wherever it was and the viewer sees a ghost click with no visible pointer. This is the #1 cause of recordings that "don't highlight the mouse."
+
+### Pattern: hover → wait → interact
+
+```js
+const loc = page.locator(selector)
+await loc.hover()
+await page.waitForTimeout(MOVE_DELAY)
+await loc.click()  // or .type(), .fill(), etc.
+```
+
+For coord-based clicks:
+
+```js
+await page.mouse.move(x, y)
+await page.waitForTimeout(MOVE_DELAY)
+await page.mouse.click(x, y)
+```
+
+Apply this to **every** visible interaction: clicks, double-clicks, typing into fields, dropdown selections. You don't need it for `goto` or non-visual waits.
+
+## Type character-by-character, never use fill()
+
+`page.fill()` sets the value instantly — invisible in a recording. Always use `page.keyboard.type()` with a delay so each keystroke appears as a visible badge in the overlay:
+
+```js
+await loc.hover()
+await page.waitForTimeout(MOVE_DELAY)
+await loc.click()
+await page.keyboard.type('some value', { delay: 60 })
+```
+
+60ms per keystroke looks natural. Adjust lower (40ms) for long strings, higher (80ms) for emphasis.
+
+## Show all configuration steps
+
+Videos should show **every step a person would take** to reproduce the scenario — navigation, form filling, dropdown selections, checkbox toggles. Don't skip configuration steps even if they seem obvious. The viewer needs to see the full sequence to understand the context and reproduce it themselves.
+
+## URL change highlights
+
+Full navigation, `pushState`, `replaceState`, and hash changes are auto-highlighted in the URL bar with a pink flash that fades over 3 seconds, which makes route transitions pop in the recording.
+
+## Webpack dev-server runtime overlay
+
+The Rancher dashboard runs under webpack-dev-server, which mounts a runtime-error iframe (`#webpack-dev-server-client-overlay`) at max z-index whenever there's a compile or runtime warning. That iframe intercepts mouse events even though it looks like an overlay, which kills the cursor dot, click ripples, and keystroke badges. The injected overlay continuously removes that iframe via MutationObserver, so you don't need to handle it manually. Don't add your own `dismissOverlay` calls; they're redundant and can race with the navigation re-inject.
+
+## Pacing (don't worry about this, it's automatic)
+
+CDP screencast only emits frames when the compositor produces new content. During quiet `waitForTimeout` pauses with no animation the stream goes silent, so a fixed-fps webm plays back faster than wall time. The overlay drives a 1px invisible canvas via rAF to keep the compositor busy throughout the recording. Don't add your own canvas/rAF loops to scripts; they're redundant.
+
+## Troubleshooting: cursor not visible in the recording
+
+If the playback shows clicks happening but no pink cursor dot or ripples:
+1. Confirm `browser.mjs` has the webpack-overlay killer (search for `killWebpackOverlay`). Older copies don't.
+2. Make sure every interaction follows the **hover → wait MOVE_DELAY → click** pattern. Bare `page.click()` with no prior pointer move means the cursor never moved, so there's nothing to render.
+3. Check that you called `startRecording()` *after* the page is idle. If you call it before the navigation finishes, the overlay may have been re-injected mid-frame.

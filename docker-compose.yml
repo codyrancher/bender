@@ -1,0 +1,31 @@
+services:
+  bender:
+    build:
+      context: .
+      dockerfile: harness/Dockerfile
+    # All configurable keys are injected from .env (see .env.example).
+    env_file:
+      - .env
+    privileged: true
+    ports:
+      - "8009:80"
+      - "4444:443"
+      - "6007:6006"
+      - "8300-8399:8200-8299"
+    volumes:
+      - bender-dind:/var/lib/docker
+      - ${BENDER_DIR:-~/bender}/pipelines:/data/pipelines
+      - ${BENDER_DIR:-~/bender}/.credentials:/data/credentials
+      - ${BENDER_DIR:-~/bender}/.config:/data/config
+      - ${BENDER_DIR:-~/bender}/.cli:/data/cli
+      - ~/.config/gh:/data/gh-config:ro
+      - ~/.gitconfig:/data/gitconfig:ro
+      - ./api-service/templates:/data/templates
+      - ${BENDER_DIR:-~/bender}/.browser-profile:/data/browser-profile
+      - /dev/snd:/dev/snd
+    devices:
+      - /dev/snd:/dev/snd
+    restart: unless-stopped
+
+volumes:
+  bender-dind:

@@ -1,0 +1,20 @@
+#!/bin/bash
+# Runs whenever the project's sidecars (rancher, browser, figma) transition
+# from stopped → running. Idempotent: safe to run multiple times.
+
+# Kill any previously-running socat on :8443 so restarts don't leave zombies
+pkill -f "socat TCP-LISTEN:8443" 2>/dev/null || true
+
+# Forward localhost:8443 → rancher sidecar:443 so tooling inside the project
+# can reach the Rancher API at https://localhost:8443.
+socat TCP-LISTEN:8443,fork,reuseaddr TCP:{{projectName}}-rancher:443 &
+
+# Run Rancher bootstrap (wait for API, login, create users, cloud creds).
+# Skip if already completed successfully on a previous run.
+if [ ! -f /workspace/.rancher-setup-done ]; then
+  echo "Setting up Rancher..."
+  chmod +x /workspace/setup-rancher.sh
+  /workspace/setup-rancher.sh
+else
+  echo "Rancher already configured, skipping setup..."
+fi

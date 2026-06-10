@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Bender Helper",
+  "version": "1.7",
+  "description": "Isolates VS Code storage per project, syncs browser sessions to sidecar browsers, and proxies GitHub requests from project containers using the host browser session",
+  "permissions": ["cookies", "storage", "alarms", "tabs", "tabGroups"],
+  "host_permissions": [
+    "*://*.github.com/*",
+    "*://*.githubusercontent.com/*",
+    "https://code.ourhome.dev/*",
+    "http://localhost:8008/*",
+    "https://localhost:4443/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://code.ourhome.dev/*",
+        "http://localhost:8008/*",
+        "https://localhost:4443/*"
+      ],
+      "js": ["isolate.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "https://code.ourhome.dev/*",
+        "http://localhost:8008/*",
+        "https://localhost:4443/*"
+      ],
+      "js": ["cookie-bridge.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["tab-pins.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

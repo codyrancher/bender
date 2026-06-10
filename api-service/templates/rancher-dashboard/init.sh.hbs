@@ -1,0 +1,226 @@
+#!/bin/bash
+# Auto-runs in background after container creation
+# Clones dashboard, configures git, sets up Rancher
+
+# Set up node version via fnm. rancher/dashboard requires node >=24; default
+# to 24 when the caller didn't specify an override.
+NODE_VERSION="{{#if nodeVersion}}{{nodeVersion}}{{else}}24{{/if}}"
+if command -v fnm &>/dev/null; then
+  eval "$(fnm env)"
+  fnm install "$NODE_VERSION"
+  fnm use "$NODE_VERSION"
+  echo 'eval "$(fnm env)"' >> ~/.bashrc
+  echo "fnm use $NODE_VERSION" >> ~/.bashrc
+fi
+
+# Export environment variables from .env and set API URL
+echo 'set -a; source /workspace/.env; set +a' >> ~/.bashrc
+echo 'export API=https://{{projectName}}-rancher' >> ~/.bashrc
+# Browser sidecar shares this container's network namespace (network_container:
+# true in template.json), so CDP is reachable on localhost, not by project-name.
+echo 'export CLAUDE_BROWSER_CDP=http://localhost:9222' >> ~/.bashrc
+# Harness API is reachable over the shared docker network; the agent running
+# here can use it to start sidecars on demand.
+echo 'export HARNESS_API=http://api:8080/api' >> ~/.bashrc
+echo 'export HARNESS_PROJECT={{projectName}}' >> ~/.bashrc
+# Project-local bin (git-fix-commit etc.) on PATH.
+echo 'export PATH=/workspace/bin:$PATH' >> ~/.bashrc
+
+# Install helper commands to /workspace/bin
+mkdir -p /workspace/bin
+if [ -f /workspace/git-fix-commit ]; then
+  mv /workspace/git-fix-commit /workspace/bin/git-fix-commit
+  chmod +x /workspace/bin/git-fix-commit
+fi
+if [ -f /workspace/format-claude-stream ]; then
+  mv /workspace/format-claude-stream /workspace/bin/format-claude-stream
+  chmod +x /workspace/bin/format-claude-stream
+fi
+if [ -f /workspace/wait-for-sidecars ]; then
+  mv /workspace/wait-for-sidecars /workspace/bin/wait-for-sidecars
+  chmod +x /workspace/bin/wait-for-sidecars
+fi
+if [ -f /workspace/auto-log-tailer ]; then
+  mv /workspace/auto-log-tailer /workspace/bin/auto-log-tailer
+  chmod +x /workspace/bin/auto-log-tailer
+fi
+
+# Start the auto-log tailer in the background so any claude session that
+# runs in this project gets its transcript streamed into /workspace/auto.logs
+# — regardless of how claude was invoked (stream-json or not).
+if [ -x /workspace/bin/auto-log-tailer ]; then
+  nohup /workspace/bin/auto-log-tailer >> /workspace/.auto-log-tailer.log 2>&1 &
+  disown 2>/dev/null || true
+fi
+
+# Install CLI tools, Cypress system deps, and ffmpeg (for browser.mjs record).
+# Idempotent — apt-get install is a no-op if present.
+if ! command -v lsof &>/dev/null || ! command -v ss &>/dev/null || ! command -v ffmpeg &>/dev/null || ! dpkg -s libgbm1 &>/dev/null; then
+  echo "Installing CLI tools, Cypress system deps, and ffmpeg..."
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    lsof iproute2 ffmpeg \
+    libglib2.0-0 libgtk-3-0 libgbm1 libnss3 libasound2 libxss1 libxtst6 \
+    libnotify4 libatk1.0-0 libatk-bridge2.0-0 libxkbcommon0 libdrm2 \
+    xvfb > /dev/null
+fi
+
+# Install playwright-core locally in /workspace so `node /workspace/browser.mjs`
+# can resolve it. (Global installs aren't on node's module-resolution path from
+# /workspace, and fnm-managed globals live in a per-node-version dir.)
+if [ ! -d /workspace/node_modules/playwright-core ]; then
+  echo "Installing playwright-core into /workspace..."
+  ( cd /workspace && npm install --no-save --silent playwright-core@latest 2>&1 ) || \
+    echo "WARN: playwright-core install failed — browser.mjs won't be usable until retried"
+fi
+
+# Configure git + gh auth from the GITHUB_TOKEN env var (before clone so they're
+# available immediately). The token is read from the environment at use-time and
+# is NEVER written into a file here.
+if [ -n "$GITHUB_TOKEN" ]; then
+echo "Configuring credentials from environment..."
+NODE_HOME=$(getent passwd 1000 | cut -d: -f6 2>/dev/null || echo "/home/node")
+
+# git: env-based credential helper — the stored config contains only the helper
+# command (literally "$GITHUB_TOKEN"), not the token value.
+HOME="$NODE_HOME" git config --global credential.helper '!f() { echo username=codyrancher; echo "password=$GITHUB_TOKEN"; }; f'
+chown 1000:1000 "$NODE_HOME/.gitconfig" 2>/dev/null || true
+
+# gh CLI reads GITHUB_TOKEN / GH_TOKEN straight from the environment — no hosts.yml needed.
+echo "Credentials configured (env-based)."
+else
+echo "No GitHub token available - push will not work."
+fi
+
+# Configure Figma MCP server for Claude Code
+# The VSCode extension reads MCP config from .claude.json project entries,
+# not from settings.local.json or .vscode/mcp.json
+rm -f ~/.claude/mcp-needs-auth-cache.json
+if [ -f ~/.claude.json ]; then
+  python3 -c "
+import json, sys
+url = sys.argv[2]
+with open(sys.argv[1]) as f: data = json.load(f)
+for proj in data.get('projects', {}).values():
+    proj.get('mcpServers', {}).pop('figma', None)
+for path in ['/workspace', '/workspace/dashboard']:
+    if path in data.get('projects', {}):
+        data['projects'][path].setdefault('mcpServers', {})['figma'] = {
+            'type': 'http',
+            'url': url
+        }
+with open(sys.argv[1], 'w') as f: json.dump(data, f, indent=2)
+" ~/.claude.json "http://{{projectName}}-figma:8000/mcp" 2>/dev/null
+fi
+
+# Sidecar-dependent setup (socat to rancher, setup-rancher.sh) lives in
+# on-sidecars-up.sh and runs whenever sidecars come up — see template docs.
+
+# Extract PR number from project name (e.g., pr-12345 or my-pr-12345)
+PR_NUMBER=""
+if [[ "{{projectName}}" =~ pr-([0-9]+) ]]; then
+  PR_NUMBER="${BASH_REMATCH[1]}"
+fi
+
+# Extract issue number from project name (e.g., issue-16868 or my-issue-16868)
+ISSUE_NUMBER=""
+if [[ "{{projectName}}" =~ issue-([0-9]+) ]]; then
+  ISSUE_NUMBER="${BASH_REMATCH[1]}"
+fi
+
+# Clone dashboard if not already present
+if [ ! -d /workspace/dashboard ]; then
+  if [ -n "$PR_NUMBER" ]; then
+    echo "Cloning rancher/dashboard and checking out PR #$PR_NUMBER..."
+    git clone https://github.com/rancher/dashboard.git /workspace/dashboard
+    cd /workspace/dashboard
+    git fetch origin pull/$PR_NUMBER/head:pr-$PR_NUMBER
+    git checkout pr-$PR_NUMBER
+    echo "Checked out PR #$PR_NUMBER."
+  else
+    echo "Cloning rancher/dashboard..."
+    git clone --depth 1 https://github.com/rancher/dashboard.git /workspace/dashboard
+    cd /workspace/dashboard
+    echo "Dashboard cloned."
+  fi
+
+  # Add codyrancher fork as origin, rename default to upstream
+  echo "Setting up remotes..."
+  git remote rename origin upstream
+  git remote add origin https://github.com/codyrancher/dashboard.git
+
+  # Configure git identity
+  {{#if gitName}}
+  git config user.name "{{{gitName}}}"
+  {{/if}}
+  {{#if gitEmail}}
+  git config user.email "{{{gitEmail}}}"
+  {{/if}}
+
+  # Auth uses the global env-based credential helper configured above
+  # (reads $GITHUB_TOKEN at use-time); nothing repo-local to set here.
+
+  # Copy VS Code launch configurations
+  if [ -d /workspace/.vscode ]; then
+    cp -r /workspace/.vscode /workspace/dashboard/.vscode
+  fi
+
+  # Exclude harness-generated files from git
+  mkdir -p .git/info
+  cat > .git/info/exclude << 'GITEXCLUDE'
+.vscode/
+GITEXCLUDE
+
+  # Install git pre-push hook (runs linter before pushing)
+  mkdir -p .git/hooks
+  cat > .git/hooks/pre-push << 'HOOK'
+#!/bin/bash
+echo "Running linter before push..."
+yarn lint
+HOOK
+  chmod +x .git/hooks/pre-push
+
+  # Install dependencies (root + storybook in parallel). Track exit codes so
+  # the init log reflects the real outcome (yarn-on-wrong-node can silently
+  # leave node_modules empty, so "Dependencies installed" was misleading).
+  echo "Installing dependencies..."
+  yarn install &
+  YARN_PID=$!
+  (cd storybook && yarn install) &
+  STORYBOOK_PID=$!
+  wait $YARN_PID; YARN_STATUS=$?
+  wait $STORYBOOK_PID; STORYBOOK_STATUS=$?
+  if [ $YARN_STATUS -ne 0 ] || [ $STORYBOOK_STATUS -ne 0 ]; then
+    echo "Dependencies install FAILED (yarn=$YARN_STATUS storybook=$STORYBOOK_STATUS)"
+    echo "active node: $(node --version 2>/dev/null || echo 'none')"
+    exit 1
+  fi
+  echo "Dependencies installed."
+else
+  echo "Dashboard already cloned, skipping clone."
+  # If a previous run left node_modules missing (e.g. install failed), retry.
+  if [ ! -d /workspace/dashboard/node_modules ]; then
+    echo "node_modules missing — re-running yarn install..."
+    cd /workspace/dashboard
+    yarn install &
+    YARN_PID=$!
+    (cd storybook && yarn install) &
+    STORYBOOK_PID=$!
+    wait $YARN_PID; YARN_STATUS=$?
+    wait $STORYBOOK_PID; STORYBOOK_STATUS=$?
+    if [ $YARN_STATUS -ne 0 ] || [ $STORYBOOK_STATUS -ne 0 ]; then
+      echo "Dependencies install FAILED (yarn=$YARN_STATUS storybook=$STORYBOOK_STATUS)"
+      echo "active node: $(node --version 2>/dev/null || echo 'none')"
+      exit 1
+    fi
+    echo "Dependencies installed."
+  fi
+fi
+
+# Rancher-specific setup (needs the rancher sidecar reachable) is now in
+# on-sidecars-up.sh — it runs when sidecars transition from stopped → running.
+
+# Marker for anything polling for init completion (agent auto-fix, etc.)
+touch /workspace/.init-done
+echo "init.sh complete"
+

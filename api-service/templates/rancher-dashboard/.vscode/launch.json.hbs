@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "yarn dev",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/dashboard",
+      "command": "yarn dev"
+    },
+    {
+      "name": "yarn test",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/dashboard",
+      "command": "yarn test"
+    },
+    {
+      "name": "yarn storybook",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/dashboard/storybook",
+      "command": "yarn storybook"
+    },
+    {
+      "name": "Debug in Browser",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}/dashboard",
+      "sourceMapPathOverrides": {
+        "webpack:///./~/*": "${workspaceFolder}/dashboard/node_modules/*",
+        "webpack:///./*": "${workspaceFolder}/dashboard/*",
+        "webpack:///*": "*"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Dev + Debug",
+      "configurations": ["yarn dev", "Debug in Browser"],
+      "stopAll": true
+    }
+  ]
+}

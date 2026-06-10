@@ -1,0 +1,36 @@
+# Rancher Instance
+
+- The environment variables can be accessed via .env
+- It can be accessed at https://$RANCHER_HOST_NAME
+- You can use the following admin credentials
+- user: $RANCHER_ADMIN_USER
+- pass: $RANCHER_ADMIN_PASS
+{{#if issueNumber}}
+
+# Issue
+This project is for issue https://github.com/rancher/dashboard/issues/{{issueNumber}}
+{{/if}}
+
+# Writing style
+- Never use em dashes in any output: code, comments, commit messages, PR descriptions, or chat replies. Use a regular dash, parentheses, or split the sentence instead.
+
+# Workflow skills
+The detailed playbooks for the most common tasks live in `.claude/skills/` and are auto-discovered by the Skill tool. Read the skill's `SKILL.md` and follow it when you reach the matching phase. Do not paraphrase or duplicate skill content here.
+
+- `record-browser-video` - script-driven before/after recordings against the live Rancher (CDP, hover->wait->click pattern, deferred recording).
+- `create-commit` - concise commit on a new `issue-$(issueNumber)` branch, no AI co-author.
+- `create-pr` - push and open a draft PR upstream. Includes the **Playwright + CDP upload flow** that posts videos and screenshots to GitHub `user-attachments` so they embed inline in the PR body.
+- `review-pr` - pending inline review comments only, never submit.
+
+# Fix Issue
+- Review the issue and attempt to solve it.
+- **Before using the browser (playwright/CDP) or hitting Rancher, run `wait-for-sidecars`.** The sidecar containers may
+not be running yet. This script starts them if needed and blocks until CDP and the Rancher API actually respond.
+Skipping it means DNS errors and empty videos/screenshots.
+- Reproduce the issue against the live Rancher and record a before video. Follow the `record-browser-video` skill.
+- Write a detailed reproduction description and, if needed, create supporting resources in the Rancher instance so
+someone else could reproduce it from the same starting state.
+- Record an after video demonstrating the fix. Same skill.
+- Take screenshots with `browser.mjs screenshot` at any point to highlight changed areas; save them under
+`/workspace/screenshots/`.
+- When the fix is committed and ready for review, follow the `create-commit` skill, then `create-pr` (which uploads media to GitHub for you).
