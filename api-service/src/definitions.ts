@@ -2,6 +2,7 @@ import { Express, Request, Response } from 'express';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { listSkillDefinitions } from './skill-definitions';
 
 // Git-backed global definitions repo. A "definition" is a folder bundling a
 // pipeline.md and the SKILL.md files it references, versioned together:
@@ -64,6 +65,36 @@ function parseStages(markdown: string): DefinitionStage[] {
       : (i < stages.length - 1 ? [i + 1] : []);
   });
   return stages;
+}
+
+// Validate that a pipeline.md forms a runnable pipeline and that every
+// referenced skill is available (bundled here or a global skill-definition).
+// Returns a list of human-readable errors ([] = valid).
+export function validatePipeline(pipelineMd: string, availableSkills: string[]): string[] {
+  const stages = parseStages(pipelineMd);
+  const errors: string[] = [];
+  if (!stages.length) { errors.push('No stages found (use "### 1. Stage Name").'); return errors; }
+
+  const byName = new Set(stages.map(s => s.name.toLowerCase()));
+  const noSkill = stages.filter(s => !s.skill).map(s => s.name);
+  if (noSkill.length) errors.push(`Missing **Skill:** on stage(s): ${noSkill.join(', ')}.`);
+
+  for (const s of stages) {
+    for (const n of s.nextNames) {
+      if (!byName.has(n.toLowerCase())) errors.push(`Stage "${s.name}" references unknown **Next:** target "${n}".`);
+    }
+  }
+
+  const preds = stages.map(() => 0);
+  stages.forEach(s => s.next.forEach(j => { preds[j]++; }));
+  if (!preds.some(p => p === 0)) errors.push('No entry point — every stage has a predecessor (fully cyclic).');
+  if (!stages.some(s => s.next.length === 0)) errors.push('No terminal stage — the pipeline never ends.');
+
+  const avail = new Set(availableSkills.map(x => x.toLowerCase()));
+  const missing = [...new Set(stages.filter(s => s.skill && !avail.has(s.skill.toLowerCase())).map(s => s.skill))];
+  if (missing.length) errors.push(`Skill(s) not available: ${missing.join(', ')}.`);
+
+  return errors;
 }
 
 function git(args: string[]): { ok: boolean; stdout: string; stderr: string } {
@@ -257,6 +288,18 @@ export function registerDefinitionRoutes(app: Express): void {
       if (!existing) return res.status(404).json({ error: 'Definition not found' });
       const pipelineMd = typeof req.body.pipelineMd === 'string' ? req.body.pipelineMd : existing.content;
       const skills = Array.isArray(req.body.skills) ? req.body.skills : existing.skills;
+
+      // Validate the graph forms a pipeline and referenced skills are available
+      // (bundled here ∪ global skill-definitions). Skip only when nothing changed.
+      if (typeof req.body.pipelineMd === 'string' && req.body.pipelineMd !== existing.content) {
+        const availableSkills = [
+          ...skills.map((s: { name: string }) => s.name),
+          ...listSkillDefinitions().map((s: { id: string }) => s.id),
+        ];
+        const errors = validatePipeline(pipelineMd, availableSkills);
+        if (errors.length) return res.status(400).json({ error: errors.join(' '), errors });
+      }
+
       const { sha } = writeDefinition({ id, pipelineMd, skills, message: req.body.message || `Update ${id}` });
       res.json({ id, sha });
     } catch (err) { res.status(500).json({ error: String(err) }); }

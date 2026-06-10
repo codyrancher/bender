@@ -224,6 +224,47 @@ export const api = {
     })
   },
 
+  // Git-backed global skill definitions (a folder with SKILL.md + reference files)
+  async getSkillDefinitions(): Promise<{ skills: Array<{ id: string; name: string; description: string; fileCount: number }> }> {
+    return fetchJSON(`${API_BASE}/skill-definitions`)
+  },
+
+  async getSkillDefinition(id: string): Promise<{ id: string; name: string; description: string; files: Array<{ path: string; content: string; binary: boolean }> }> {
+    return fetchJSON(`${API_BASE}/skill-definitions/${id}`)
+  },
+
+  async createSkillDefinition(id: string): Promise<{ id: string; sha: string }> {
+    return fetchJSON(`${API_BASE}/skill-definitions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+  },
+
+  async updateSkillDefinition(
+    id: string,
+    files: Array<{ path: string; content: string }>,
+    message?: string,
+  ): Promise<{ id: string; sha: string }> {
+    return fetchJSON(`${API_BASE}/skill-definitions/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files, message }),
+    })
+  },
+
+  async deleteSkillDefinition(id: string): Promise<{ status: string }> {
+    return fetchJSON(`${API_BASE}/skill-definitions/${id}`, { method: 'DELETE' })
+  },
+
+  async getSkillDefinitionHistory(id: string): Promise<{ commits: Array<{ sha: string; author: string; date: string; message: string }> }> {
+    return fetchJSON(`${API_BASE}/skill-definitions/${id}/history`)
+  },
+
+  skillDefinitionCommitUrl(id: string, sha: string): string {
+    return `${API_BASE}/skill-definitions/${id}/commit/${sha}`
+  },
+
   // Harness dev environment
   async getHarnessStatus(): Promise<HarnessStatus> {
     return fetchJSON<HarnessStatus>(`${API_BASE}/harness/status`)

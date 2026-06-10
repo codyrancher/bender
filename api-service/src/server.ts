@@ -6,6 +6,7 @@ import path from 'path';
 import { registerRoutes, initPortForwards } from './routes';
 import { registerInsightsRoutes } from './insights';
 import { registerDefinitionRoutes } from './definitions';
+import { registerSkillDefinitionRoutes } from './skill-definitions';
 import { attachCliServer, registerCliRoutes } from './pty';
 import { attachEventsServer } from './events';
 
@@ -20,6 +21,7 @@ app.use(express.json({ limit: '50mb' }));
 registerRoutes(app);
 registerInsightsRoutes(app);
 registerDefinitionRoutes(app);
+registerSkillDefinitionRoutes(app);
 registerCliRoutes(app);
 
 // Ensure data directories exist

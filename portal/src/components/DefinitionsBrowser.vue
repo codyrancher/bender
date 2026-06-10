@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/services/api'
 import DiffViewer from './DiffViewer.vue'
 import PipelineGraph from './PipelineGraph.vue'
+import SkillDefinitionsPanel from './SkillDefinitionsPanel.vue'
 
 defineEmits<{ (e: 'close'): void }>()
+
+const activeTab = ref<'pipelines' | 'skills'>('pipelines')
 
 interface DefSummary { id: string; name: string; stages: any[]; skills: string[] }
 interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }> }
@@ -29,7 +32,21 @@ const diffInitial = ref(0)
 const creating = ref(false)
 const newId = ref('')
 
-onMounted(load)
+// pipeline.md editor working copy + global skill availability
+const editMd = ref('')
+const mdTextarea = ref<HTMLTextAreaElement | null>(null)
+const globalSkillIds = ref<string[]>([])
+const pdefSaving = ref(false)
+const pdefError = ref('')
+
+onMounted(() => { load(); loadGlobalSkills() })
+
+async function loadGlobalSkills() {
+  try {
+    const data = await api.getSkillDefinitions()
+    globalSkillIds.value = data.skills.map(s => s.id)
+  } catch {}
+}
 
 async function load() {
   try {
@@ -46,6 +63,8 @@ async function select(id: string) {
     const [d, h] = await Promise.all([api.getDefinition(id), api.getDefinitionHistory(id)])
     detail.value = d
     history.value = h.commits
+    editMd.value = d.content
+    pdefError.value = ''
   } catch {
     detail.value = null
     history.value = []
@@ -87,89 +106,165 @@ function shortDate(iso: string): string {
   catch { return iso }
 }
 
-// ── Stage editor ──────────────────────────────────────────────
+// ── pipeline.md parsing + validation ──────────────────────────
 const STAGE_HEADER = /^###\s+\d+\.\s+/
 
-// Split pipeline.md into the leading head block + one text block per stage
-function splitSections(md: string): { head: string; sections: string[] } {
+interface ParsedStage { name: string; skill: string; successCriteria: string; nextNames: string[]; next: number[] }
+
+// Client-side mirror of the backend pipeline.md parser (parsePipelineStages +
+// resolveGraph): captures stages, skills, success criteria and Next edges, then
+// resolves successor names to indices (linear default when no edges declared).
+function parsePipeline(md: string): { stages: ParsedStage[]; unresolved: Array<{ stage: string; target: string }> } {
   const lines = (md || '').split('\n')
-  const idxs: number[] = []
-  lines.forEach((l, i) => { if (STAGE_HEADER.test(l)) idxs.push(i) })
-  if (!idxs.length) return { head: md || '', sections: [] }
-  const head = lines.slice(0, idxs[0]).join('\n')
-  const sections: string[] = []
-  for (let k = 0; k < idxs.length; k++) {
-    const end = k + 1 < idxs.length ? idxs[k + 1] : lines.length
-    sections.push(lines.slice(idxs[k], end).join('\n'))
+  const stages: ParsedStage[] = []
+  let cur: ParsedStage | null = null
+  let desc: string[] = []
+  const flush = () => { if (cur) { stages.push(cur) } }
+  for (const line of lines) {
+    const m = line.match(/^###\s+\d+\.\s+(.+)/)
+    if (m) { flush(); cur = { name: m[1].trim(), skill: '', successCriteria: '', nextNames: [], next: [] }; desc = []; continue }
+    if (cur) {
+      let mm: RegExpMatchArray | null
+      if ((mm = line.match(/^\*\*Skill:\*\*\s*(.+)/))) { cur.skill = mm[1].trim(); continue }
+      if ((mm = line.match(/^\*\*Success Criteria:\*\*\s*(.+)/))) { cur.successCriteria = mm[1].trim(); continue }
+      if ((mm = line.match(/^\*\*Next:\*\*\s*(.+)/))) { cur.nextNames = mm[1].split(',').map(s => s.trim()).filter(Boolean); continue }
+      const t = line.trim(); if (t) desc.push(t)
+    }
   }
-  return { head, sections }
+  flush()
+  const byName = new Map<string, number>()
+  stages.forEach((s, i) => byName.set(s.name.toLowerCase(), i))
+  const anyEdges = stages.some(s => s.nextNames.length)
+  const unresolved: Array<{ stage: string; target: string }> = []
+  stages.forEach((s, i) => {
+    if (anyEdges) {
+      s.next = s.nextNames.map(n => {
+        const j = byName.has(n.toLowerCase()) ? byName.get(n.toLowerCase())! : -1
+        if (j < 0) unresolved.push({ stage: s.name, target: n })
+        return j
+      }).filter(x => x >= 0)
+    } else {
+      s.next = i < stages.length - 1 ? [i + 1] : []
+    }
+  })
+  return { stages, unresolved }
 }
 
-const stageEditorOpen = ref(false)
-const editingStageIndex = ref(-1)
-const stageText = ref('')
-const skillName = ref('')
-const skillText = ref('')
-const stageSaving = ref(false)
-const stageError = ref('')
+// Names of skills that can satisfy a stage reference: bundled in this definition
+// OR available as a global skill-definition.
+const availableSkillNames = computed(() => {
+  const set = new Set<string>()
+  for (const id of globalSkillIds.value) set.add(id.toLowerCase())
+  for (const s of detail.value?.skills || []) set.add(s.name.toLowerCase())
+  return set
+})
 
-const editingStageName = computed(() =>
-  detail.value?.stages[editingStageIndex.value]?.name || 'Stage',
+const parsed = computed(() => parsePipeline(editMd.value))
+
+const validation = computed(() => {
+  const { stages, unresolved } = parsed.value
+  const errors: string[] = []
+  let missingSkills: string[] = []
+  if (!stages.length) {
+    errors.push('No stages found. Add one with "### 1. Stage Name".')
+  } else {
+    const noSkill = stages.filter(s => !s.skill).map(s => s.name)
+    if (noSkill.length) errors.push(`Missing **Skill:** on stage(s): ${noSkill.join(', ')}.`)
+
+    for (const u of unresolved) errors.push(`Stage "${u.stage}" → unknown **Next:** target "${u.target}".`)
+
+    // graph must be able to start and end
+    const preds = stages.map(() => 0)
+    stages.forEach(s => s.next.forEach(j => { preds[j]++ }))
+    if (!preds.some(p => p === 0)) errors.push('No entry point — every stage has a predecessor (the graph is fully cyclic).')
+    if (!stages.some(s => s.next.length === 0)) errors.push('No terminal stage — the pipeline never reaches an end.')
+
+    missingSkills = [...new Set(
+      stages.filter(s => s.skill && !availableSkillNames.value.has(s.skill.toLowerCase())).map(s => s.skill),
+    )]
+    if (missingSkills.length) errors.push(`Skill(s) not available: ${missingSkills.join(', ')}. Create them in the Skills tab.`)
+  }
+  return { ok: errors.length === 0, errors, stages, missingSkills }
+})
+
+// Skill ids are kebab/snake alphanumerics; only those can be auto-created.
+const creatableMissingSkills = computed(() =>
+  validation.value.missingSkills.filter(n => /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(n)),
 )
 
-function openStage(index: number) {
-  if (!detail.value) return
-  const { sections } = splitSections(detail.value.content)
-  stageText.value = sections[index] ?? ''
-  editingStageIndex.value = index
-  const sk = detail.value.stages[index]?.skill || ''
-  skillName.value = sk
-  skillText.value = detail.value.skills.find(s => s.name === sk)?.content ?? ''
-  stageError.value = ''
-  stageEditorOpen.value = true
+const quickCreating = ref(false)
+async function quickCreateMissingSkills() {
+  const names = creatableMissingSkills.value
+  if (!names.length || quickCreating.value) return
+  quickCreating.value = true
+  try {
+    for (const name of names) {
+      try { await api.createSkillDefinition(name) } catch { /* ignore conflicts/invalid */ }
+    }
+    await loadGlobalSkills() // refresh availability → validation re-evaluates
+  } finally {
+    quickCreating.value = false
+  }
 }
 
-async function saveStage() {
-  if (!detail.value || stageSaving.value) return
-  stageSaving.value = true
-  stageError.value = ''
+const dirty = computed(() => !!detail.value && editMd.value !== detail.value.content)
+
+// Last graph that parsed & validated cleanly — what we keep rendering while the
+// user is mid-edit and the current text is temporarily invalid.
+const lastValidStages = ref<Array<{ name: string; skill: string; next: number[] }>>([])
+watch(validation, v => {
+  if (v.ok) lastValidStages.value = v.stages.map(s => ({ name: s.name, skill: s.skill, next: s.next }))
+}, { immediate: true })
+
+async function saveDefinitionMd() {
+  if (!detail.value || pdefSaving.value || !validation.value.ok) return
+  pdefSaving.value = true
+  pdefError.value = ''
   try {
     const id = detail.value.id
-    const { head, sections } = splitSections(detail.value.content)
-    sections[editingStageIndex.value] = stageText.value.replace(/\s+$/, '') + '\n'
-    const parts = head ? [head, ...sections] : [...sections]
-    const pipelineMd = parts.join('\n')
-
-    // merge the edited skill into the full skills set
-    const skills = detail.value.skills.map(s => ({ ...s }))
-    const name = skillName.value.trim()
-    if (name) {
-      const idx = skills.findIndex(s => s.name === name)
-      if (skillText.value.trim()) {
-        if (idx >= 0) skills[idx].content = skillText.value
-        else skills.push({ name, content: skillText.value })
-      } else if (idx >= 0) {
-        skills.splice(idx, 1)
-      }
-    }
-
-    await api.updateDefinition(id, { pipelineMd, skills, message: `Edit stage: ${editingStageName.value}` })
-    stageEditorOpen.value = false
+    await api.updateDefinition(id, { pipelineMd: editMd.value, message: `Edit pipeline ${id}` })
     await select(id)
+    await load()
   } catch (e) {
-    stageError.value = e instanceof Error ? e.message : 'Failed to save'
+    pdefError.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
-    stageSaving.value = false
+    pdefSaving.value = false
   }
+}
+
+// Clicking a graph node scrolls the editor to that stage's section and selects it.
+function jumpToStage(index: number) {
+  const lines = editMd.value.split('\n')
+  const headerIdxs: number[] = []
+  lines.forEach((l, i) => { if (STAGE_HEADER.test(l)) headerIdxs.push(i) })
+  const startLine = headerIdxs[index]
+  if (startLine == null) return
+  const endLine = headerIdxs[index + 1] ?? lines.length
+  const startChar = lines.slice(0, startLine).join('\n').length + (startLine ? 1 : 0)
+  const endChar = lines.slice(0, endLine).join('\n').length
+  const ta = mdTextarea.value
+  if (!ta) return
+  ta.focus()
+  ta.setSelectionRange(startChar, endChar)
+  // approximate scroll to the section
+  const lineHeight = ta.scrollHeight / Math.max(1, lines.length)
+  ta.scrollTop = Math.max(0, startLine * lineHeight - 40)
 }
 </script>
 
 <template>
   <div class="defs-page">
     <div class="page-header">
-      <h1>Pipeline Definitions</h1>
+      <h1>Definitions</h1>
+      <div class="def-tabs">
+        <button :class="{ active: activeTab === 'pipelines' }" @click="activeTab = 'pipelines'">Pipelines</button>
+        <button :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">Skills</button>
+      </div>
     </div>
-    <div class="defs">
+
+    <SkillDefinitionsPanel v-if="activeTab === 'skills'" />
+
+    <div v-show="activeTab === 'pipelines'" class="defs">
       <!-- left: definition list + create -->
       <div class="defs-list">
         <div class="defs-list-header">{{ definitions.length }} definitions</div>
@@ -202,16 +297,69 @@ async function saveStage() {
           </div>
 
           <div class="defs-section">
-            <div class="defs-section-title">Graph <span class="defs-hint">— click a stage to edit</span></div>
-            <PipelineGraph v-if="detail.stages.length" :stages="detail.stages">
+            <div class="defs-section-title">
+              Graph
+              <span class="defs-hint">— live preview (last valid){{ dirty && !validation.ok ? ' · current edits invalid' : '' }}</span>
+            </div>
+            <PipelineGraph v-if="lastValidStages.length" :stages="lastValidStages">
               <template #node="{ stage, index }">
-                <button type="button" class="defs-gnode" @click="openStage(index)">
+                <button type="button" class="defs-gnode" title="Jump to this stage in the editor" @click="jumpToStage(index)">
                   <span class="defs-gnode-name">{{ stage.name }}</span>
                   <span class="defs-gnode-skill">{{ stage.skill }}</span>
                 </button>
               </template>
             </PipelineGraph>
-            <div v-else class="defs-empty">No stages</div>
+            <div v-else class="defs-empty">No valid graph yet — add stages below</div>
+          </div>
+
+          <div class="defs-section">
+            <div class="defs-section-title">
+              pipeline.md
+              <span class="defs-hint">— edit the definition; validated on save</span>
+            </div>
+            <textarea
+              ref="mdTextarea"
+              v-model="editMd"
+              class="pdef-textarea"
+              spellcheck="false"
+              placeholder="# Pipeline Name&#10;&#10;## Stages&#10;&#10;### 1. Build&#10;**Skill:** build&#10;**Success Criteria:** compiles cleanly&#10;**Next:** Test, Lint"
+            ></textarea>
+
+            <div class="pdef-validation" :class="validation.ok ? 'ok' : 'bad'">
+              <template v-if="validation.ok">✓ Valid — forms a pipeline and all skills are available.</template>
+              <template v-else>
+                <div class="pdef-verr">
+                  <div class="pdef-verr-text">
+                    <div class="pdef-verr-title">⚠ {{ validation.errors.length }} issue{{ validation.errors.length === 1 ? '' : 's' }}</div>
+                    <ul><li v-for="(e, i) in validation.errors" :key="i">{{ e }}</li></ul>
+                  </div>
+                  <button
+                    v-if="creatableMissingSkills.length"
+                    class="pdef-quickfix"
+                    :disabled="quickCreating"
+                    @click="quickCreateMissingSkills"
+                  >
+                    {{ quickCreating
+                      ? 'Creating…'
+                      : `+ Quick-create ${creatableMissingSkills.length} missing skill${creatableMissingSkills.length === 1 ? '' : 's'}` }}
+                  </button>
+                </div>
+              </template>
+            </div>
+
+            <div v-if="pdefError" class="pdef-save-error">{{ pdefError }}</div>
+
+            <div class="pdef-actions">
+              <span v-if="dirty" class="pdef-dirty">● Unsaved changes</span>
+              <button
+                class="pdef-save"
+                :disabled="pdefSaving || !dirty || !validation.ok"
+                :title="!validation.ok ? 'Fix validation issues before saving' : ''"
+                @click="saveDefinitionMd"
+              >
+                {{ pdefSaving ? 'Saving…' : 'Save & commit' }}
+              </button>
+            </div>
           </div>
 
           <div class="defs-section">
@@ -250,57 +398,6 @@ async function saveStage() {
     :initial-index="diffInitial"
     @close="diffOpen = false"
   />
-
-  <!-- Stage editor -->
-  <Teleport to="body">
-    <div v-if="stageEditorOpen" class="modal-overlay" @mousedown.self="stageEditorOpen = false">
-      <div class="stage-editor">
-        <div class="se-header">
-          <div class="se-title">
-            <h3>Edit stage: {{ editingStageName }}</h3>
-            <span class="se-sub">{{ detail?.name }} · {{ detail?.id }}</span>
-          </div>
-          <button class="se-close" @click="stageEditorOpen = false">✕</button>
-        </div>
-
-        <div class="se-body">
-          <div class="se-field">
-            <label class="se-label">Stage definition <span class="se-label-hint">(pipeline.md section)</span></label>
-            <textarea
-              v-model="stageText"
-              class="se-textarea stage"
-              spellcheck="false"
-              placeholder="### 1. Stage Name&#10;**Skill:** my-skill&#10;**Success Criteria:** …&#10;**Next:** …"
-            ></textarea>
-          </div>
-
-          <div class="se-field">
-            <label class="se-label">
-              Related skill
-              <input v-model="skillName" class="se-skill-name" placeholder="skill-name" spellcheck="false" />
-              <span class="se-label-hint">SKILL.md</span>
-            </label>
-            <textarea
-              v-model="skillText"
-              class="se-textarea skill"
-              spellcheck="false"
-              :disabled="!skillName.trim()"
-              :placeholder="skillName.trim() ? 'Skill instructions…' : 'Set a skill name above to add a skill'"
-            ></textarea>
-          </div>
-        </div>
-
-        <div v-if="stageError" class="se-error">{{ stageError }}</div>
-
-        <div class="se-footer">
-          <button class="modal-btn cancel" :disabled="stageSaving" @click="stageEditorOpen = false">Cancel</button>
-          <button class="modal-btn create" :disabled="stageSaving" @click="saveStage">
-            {{ stageSaving ? 'Saving…' : 'Save & commit' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -333,6 +430,29 @@ async function saveStage() {
   color: var(--color-text-primary);
   margin: 0;
 }
+
+.def-tabs {
+  display: flex;
+  border: 1px solid var(--color-border-medium);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.def-tabs button {
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.def-tabs button + button { border-left: 1px solid var(--color-border-medium); }
+.def-tabs button:hover { color: var(--color-text-primary); }
+.def-tabs button.active { background: var(--color-accent); color: var(--color-text-bright); }
 
 .back-btn {
   padding: 6px 12px;
@@ -566,6 +686,93 @@ async function saveStage() {
 .defs-commit-date { font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
 
 .defs-empty { font-size: 12px; color: var(--color-text-muted); }
+
+/* ── pipeline.md editor ── */
+.pdef-textarea {
+  width: 100%;
+  min-height: 280px;
+  resize: vertical;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  outline: none;
+  tab-size: 2;
+}
+.pdef-textarea:focus { border-color: var(--color-accent); }
+
+.pdef-validation {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.pdef-validation.ok {
+  color: var(--color-status-running);
+  background: rgba(91, 168, 160, 0.10);
+}
+.pdef-validation.bad {
+  color: var(--color-error);
+  background: rgba(232, 88, 88, 0.08);
+}
+.pdef-verr { display: flex; align-items: center; gap: 12px; }
+.pdef-verr-text { flex: 1; min-width: 0; }
+.pdef-verr-title { font-weight: 600; margin-bottom: 4px; }
+.pdef-validation ul { margin: 0; padding-left: 18px; }
+.pdef-validation li { margin: 2px 0; }
+
+.pdef-quickfix {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--color-error);
+  background: transparent;
+  color: var(--color-error);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.pdef-quickfix:hover:not(:disabled) { background: var(--color-error); color: var(--color-text-bright); }
+.pdef-quickfix:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pdef-save-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  color: var(--color-error);
+  font-size: 12px;
+  background: rgba(232, 88, 88, 0.08);
+  border-radius: 6px;
+}
+
+.pdef-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.pdef-dirty { font-size: 11px; color: var(--color-warning); margin-right: auto; }
+
+.pdef-save {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: var(--color-text-bright);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.pdef-save:hover:not(:disabled) { background: var(--color-accent-hover); }
+.pdef-save:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Stage editor modal ── */
 .modal-overlay {
