@@ -612,8 +612,13 @@ export function registerRoutes(app: Express): void {
         fs.chownSync(mdPath, 1000, 1000);
       }
 
-      // Scaffold template files if requested
-      const template = (req.body.template || '').trim();
+      // Every pipeline gets the rancher-dashboard template environment by default
+      // (CLAUDE.md with Rancher instructions, browser.mjs, wait-for-sidecars, the
+      // rancher + browser sidecars, setup-rancher.sh) — definition-based pipelines
+      // included — unless a specific template is requested. This is the same
+      // sidecar/CLAUDE.md setup inherited from claude-harness.
+      const requestedTemplate = (req.body.template || '').trim();
+      const template = requestedTemplate || (getTemplateIds().includes('rancher-dashboard') ? 'rancher-dashboard' : '');
       const requestVars: Record<string, string> = req.body.vars || {};
       const settings = readSettings();
       // Keys are sourced from env vars (see .env.example); fall back to any
