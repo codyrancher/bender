@@ -9,15 +9,16 @@ import FileViewer from './FileViewer.vue'
 import ViewportOverlay from './ViewportOverlay.vue'
 import Modal from './Modal.vue'
 import PipelineGraph from './PipelineGraph.vue'
-import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact } from '@/types'
+import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact, PipelineArg } from '@/types'
 
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 
-const definitions = ref<Array<{ id: string; name: string; stages?: PipelineStage[]; skills?: string[] }>>([])
+const definitions = ref<Array<{ id: string; name: string; stages?: PipelineStage[]; skills?: string[]; args?: PipelineArg[] }>>([])
 const showNewModal = ref(false)
 const newName = ref('')
 const selectedDefinition = ref('')
+const argValues = ref<Record<string, string>>({})
 const creating = ref(false)
 
 const pipelineRuns = ref<Record<string, PipelineRun[]>>({})
@@ -115,11 +116,22 @@ async function fetchRuns(pipeline: string) {
 
 const pipelines = computed(() => pipelinesStore.pipelines)
 
-const selectedStages = computed(() => {
+const selectedArgs = computed<PipelineArg[]>(() => {
   if (!selectedDefinition.value) return []
   const def = definitions.value.find(d => d.id === selectedDefinition.value)
-  return def?.stages || []
+  return def?.args || []
 })
+
+// Seed the arg form with declared defaults whenever the selected definition changes.
+watch(selectedArgs, (args) => {
+  const next: Record<string, string> = {}
+  for (const a of args) next[a.name] = argValues.value[a.name] ?? a.default ?? ''
+  argValues.value = next
+}, { immediate: true })
+
+const argsValid = computed(() =>
+  selectedArgs.value.every(a => !a.required || (argValues.value[a.name] || '').trim()),
+)
 
 function toggleExpand(name: string) {
   if (expandedPipeline.value === name) {
@@ -136,11 +148,18 @@ function openNewModal() {
 }
 
 async function handleCreate() {
-  if (!newName.value.trim() || creating.value) return
+  if (!newName.value.trim() || creating.value || !argsValid.value) return
   creating.value = true
   try {
+    // collect non-empty arg values into the env-args payload
+    const args: Record<string, string> = {}
+    for (const a of selectedArgs.value) {
+      const v = (argValues.value[a.name] || '').trim()
+      if (v) args[a.name] = v
+    }
     await pipelinesStore.createPipeline(newName.value.trim(), {
       definitionId: selectedDefinition.value || undefined,
+      ...(Object.keys(args).length && { args }),
     })
     showNewModal.value = false
   } catch {
@@ -815,23 +834,27 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
             </option>
           </select>
         </div>
-        <div v-if="selectedStages.length" class="stages-preview">
-          <label>Stages</label>
-          <div class="preview-stages">
-            <div v-for="(s, i) in selectedStages" :key="i" class="preview-stage">
-              <span class="preview-num">{{ i + 1 }}</span>
-              <div class="preview-info">
-                <span class="preview-name">{{ s.name }}</span>
-                <span class="preview-skill">{{ s.skill }}</span>
-                <span v-if="s.successCriteria" class="preview-criteria">{{ s.successCriteria }}</span>
-              </div>
+        <div v-if="selectedArgs.length" class="args-form">
+          <label>Arguments</label>
+          <div v-for="a in selectedArgs" :key="a.name" class="arg-field">
+            <div class="arg-label">
+              <span class="arg-name">{{ a.name }}</span>
+              <span v-if="a.required" class="arg-required">required</span>
             </div>
+            <p v-if="a.description" class="arg-desc">{{ a.description }}</p>
+            <input
+              v-model="argValues[a.name]"
+              type="text"
+              :placeholder="a.default || a.name"
+              autocomplete="off"
+              spellcheck="false"
+            />
           </div>
         </div>
       </div>
       <template #footer>
         <button class="modal-btn cancel" :disabled="creating" @click="showNewModal = false">Cancel</button>
-        <button class="modal-btn create" :disabled="!newName.trim() || creating" @click="handleCreate">
+        <button class="modal-btn create" :disabled="!newName.trim() || creating || !argsValid" @click="handleCreate">
           {{ creating ? 'Creating...' : 'Create' }}
         </button>
       </template>
@@ -1973,7 +1996,7 @@ a.artifact-row:hover,
 }
 
 .form-group label,
-.stages-preview label {
+.args-form > label {
   display: block;
   font-size: 11px;
   font-weight: 600;
@@ -2006,63 +2029,60 @@ a.artifact-row:hover,
   color: var(--color-text-muted);
 }
 
-.stages-preview {
+.args-form {
   margin-bottom: 14px;
 }
 
-.preview-stages {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.arg-field {
+  margin-bottom: 12px;
 }
 
-.preview-stage {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--color-bg-primary);
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.preview-num {
-  width: 18px;
-  height: 18px;
-  background: var(--color-accent);
-  color: var(--color-text-bright);
-  border-radius: 50%;
+.arg-label {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  flex-shrink: 0;
-  margin-top: 1px;
+  gap: 8px;
+  margin-bottom: 3px;
 }
 
-.preview-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.preview-name {
-  color: var(--color-text-primary);
+.arg-name {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
-.preview-skill {
+.arg-required {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-status-stopped);
+  border: 1px solid var(--color-status-stopped);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.arg-desc {
+  margin: 0 0 5px;
+  font-size: 11px;
   color: var(--color-text-muted);
-  font-size: 10px;
 }
 
-.preview-criteria {
-  color: var(--color-accent);
-  font-size: 10px;
-  font-style: italic;
+.args-form input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
 }
+
+.args-form input:focus { border-color: var(--color-accent); }
+.args-form input::placeholder { color: var(--color-text-muted); }
 
 .modal-btn {
   padding: 8px 18px;

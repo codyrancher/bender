@@ -9,6 +9,15 @@ export interface PipelineStage {
   next?: number[]
 }
 
+// An input a pipeline definition accepts (declared via its "## Args" section);
+// rendered as a form at creation and passed to the run as an env var.
+export interface PipelineArg {
+  name: string
+  description: string
+  required: boolean
+  default: string
+}
+
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled'
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 

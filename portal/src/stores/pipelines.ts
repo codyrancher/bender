@@ -251,7 +251,7 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     }
   }
 
-  async function createPipeline(pipelineName: string, opts?: { pipelineMd?: string; definitionId?: string; template?: string; vars?: Record<string, string> }) {
+  async function createPipeline(pipelineName: string, opts?: { pipelineMd?: string; definitionId?: string; template?: string; vars?: Record<string, string>; args?: Record<string, string> }) {
     const ui = useUiStore()
     try {
       startingPipelines.value.add(pipelineName)

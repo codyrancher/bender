@@ -162,6 +162,19 @@ interface BenderJson {
   browserHost?: string;
   externalPorts?: Record<string, number>;
   vars?: Record<string, string>;
+  args?: Record<string, string>;
+}
+
+// Build `-e NAME=value` docker args from user-supplied pipeline args (declared
+// by the definition's "## Args" section). Only valid env-var names are passed.
+function pipelineArgEnvArgs(args: unknown): string[] {
+  const out: string[] = [];
+  if (args && typeof args === 'object') {
+    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof v === 'string' && v) out.push('-e', `${k}=${v}`);
+    }
+  }
+  return out;
 }
 
 function readBenderJson(project: string): BenderJson | null {
@@ -640,6 +653,7 @@ export function registerRoutes(app: Express): void {
         '-e', 'CLAUDE_CODE_SKIP_PERMISSIONS_DISCLAIMER=1',
         '-e', `PROJECT_NAME=${projectName}`,
         ...credentialEnvArgs(),
+        ...pipelineArgEnvArgs(req.body.args),
         '-v', `${DATA_DIR}/projects/${projectName}:/workspace`,
         '-v', `${DATA_DIR}/credentials:/claude-data`,
         '-v', `${DATA_DIR}/config:/claude-config`,
@@ -673,6 +687,15 @@ export function registerRoutes(app: Express): void {
       if (requestVars.rancherTag) projectVars.rancherTag = requestVars.rancherTag;
       if (requestVars.nodeVersion) projectVars.nodeVersion = requestVars.nodeVersion;
 
+      // Declared pipeline args (passed into the container as env vars above) —
+      // persist them on the project for reference.
+      const pipelineArgs: Record<string, string> = {};
+      if (req.body.args && typeof req.body.args === 'object') {
+        for (const [k, v] of Object.entries(req.body.args as Record<string, unknown>)) {
+          if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof v === 'string' && v) pipelineArgs[k] = v;
+        }
+      }
+
       const harnessJson: BenderJson = {
         ...(template && { template }),
         sidecars: sidecars.map(s => s.suffix),
@@ -680,6 +703,7 @@ export function registerRoutes(app: Express): void {
         ...(browserNetHost && { browserHost: browserNetHost }),
         ...(allocatedPort && { externalPorts: { rancher: allocatedPort } }),
         ...(Object.keys(projectVars).length && { vars: projectVars }),
+        ...(Object.keys(pipelineArgs).length && { args: pipelineArgs }),
       };
       const harnessPath = path.join(projectPath, '.bender.json');
       fs.writeFileSync(harnessPath, JSON.stringify(harnessJson, null, 2));

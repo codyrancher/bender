@@ -9,6 +9,7 @@ import type {
   HarnessStatus,
   PipelineRun,
   PipelineStage,
+  PipelineArg,
 } from '@/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -30,7 +31,7 @@ export const api = {
 
   async createPipeline(
     name: string,
-    opts?: { pipelineMd?: string; definitionId?: string; template?: string; vars?: Record<string, string> },
+    opts?: { pipelineMd?: string; definitionId?: string; template?: string; vars?: Record<string, string>; args?: Record<string, string> },
   ): Promise<CreatePipelineResponse> {
     return fetchJSON<CreatePipelineResponse>(`${API_BASE}/pipelines`, {
       method: 'POST',
@@ -177,11 +178,11 @@ export const api = {
   },
 
   // Git-backed global definitions (bundle pipeline.md + skills)
-  async getDefinitions(): Promise<{ definitions: Array<{ id: string; name: string; stages: PipelineStage[]; skills: string[] }> }> {
+  async getDefinitions(): Promise<{ definitions: Array<{ id: string; name: string; stages: PipelineStage[]; skills: string[]; args?: PipelineArg[] }> }> {
     return fetchJSON(`${API_BASE}/definitions`)
   },
 
-  async getDefinition(id: string): Promise<{ id: string; name: string; content: string; stages: PipelineStage[]; skills: Array<{ name: string; content: string }> }> {
+  async getDefinition(id: string): Promise<{ id: string; name: string; content: string; stages: PipelineStage[]; skills: Array<{ name: string; content: string }>; args?: PipelineArg[] }> {
     return fetchJSON(`${API_BASE}/definitions/${id}`)
   },
 

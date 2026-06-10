@@ -97,6 +97,31 @@ export function validatePipeline(pipelineMd: string, availableSkills: string[]):
   return errors;
 }
 
+interface PipelineArg { name: string; description: string; required: boolean; default: string }
+
+// Parse an optional "## Args" section declaring the inputs a pipeline accepts.
+// Each arg is a bullet: `- **NAME** (required): description. Default: \`value\``
+// (the "(required)" flag and "Default: ..." are optional). These become a simple
+// form at creation time and are passed into the pipeline container as env vars.
+function parseArgs(markdown: string): PipelineArg[] {
+  const lines = (markdown || '').split('\n');
+  const args: PipelineArg[] = [];
+  let inArgs = false;
+  for (const line of lines) {
+    if (/^##\s+Args\b/i.test(line)) { inArgs = true; continue; }
+    if (inArgs && /^##\s+/.test(line)) break; // next section ends the Args block
+    if (!inArgs) continue;
+    const m = line.match(/^\s*[-*]\s+\*\*([A-Za-z_][A-Za-z0-9_]*)\*\*\s*(\(required\))?\s*:?\s*(.*)$/);
+    if (!m) continue;
+    let desc = (m[3] || '').trim();
+    let def = '';
+    const dm = desc.match(/Default:\s*`([^`]*)`/i);
+    if (dm) { def = dm[1]; desc = desc.replace(/\.?\s*Default:\s*`[^`]*`/i, '').trim(); }
+    args.push({ name: m[1], description: desc, required: !!m[2], default: def });
+  }
+  return args;
+}
+
 function git(args: string[]): { ok: boolean; stdout: string; stderr: string } {
   const r = spawnSync('git', args, { cwd: DEFINITIONS_DIR, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
   return { ok: r.status === 0, stdout: r.stdout || '', stderr: r.stderr || '' };
@@ -164,6 +189,7 @@ export function listDefinitions(): any[] {
       name: titleize(entry.name),
       stages: parseStages(content),
       skills: listSkillNames(entry.name),
+      args: parseArgs(content),
     });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
@@ -180,7 +206,7 @@ export function getDefinition(id: string): any | null {
     name,
     content: fs.readFileSync(path.join(dir, 'skills', name, 'SKILL.md'), 'utf-8'),
   }));
-  return { id, name: titleize(id), content, stages: parseStages(content), skills };
+  return { id, name: titleize(id), content, stages: parseStages(content), skills, args: parseArgs(content) };
 }
 
 // Write (create or overwrite) a definition and commit it.

@@ -2,6 +2,10 @@
 
 Reproduce a rancher/dashboard issue, demonstrate it (screenshot or video), fix it, verify the fix against the original demonstration, ensure tests, record a fixed demonstration, then commit and open a PR.
 
+## Args
+
+- **ISSUE_URL** (required): URL of the GitHub issue to target (e.g. `https://github.com/rancher/dashboard/issues/12345`).
+
 ## Stages
 
 ### 1. Reproduce Issue
