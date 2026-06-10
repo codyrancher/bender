@@ -2,7 +2,7 @@ import { Express, Request, Response } from 'express';
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { listSkillDefinitions } from './skill-definitions';
+import { listSkillDefinitions, getSkillDefinition } from './skill-definitions';
 
 // Git-backed global definitions repo. A "definition" is a folder bundling a
 // pipeline.md and the SKILL.md files it references, versioned together:
@@ -270,10 +270,29 @@ export function materializeInto(id: string, workspaceDir: string): boolean {
   const def = getDefinition(id);
   if (!def) return false;
   fs.writeFileSync(path.join(workspaceDir, 'pipeline.md'), def.content);
+
+  const written = new Set<string>();
+  // Skills bundled with the definition take precedence.
   for (const s of def.skills) {
     const sdir = path.join(workspaceDir, '.claude', 'skills', s.name);
     fs.mkdirSync(sdir, { recursive: true });
     fs.writeFileSync(path.join(sdir, 'SKILL.md'), s.content);
+    written.add(s.name.toLowerCase());
+  }
+  // Any skill a stage references but doesn't bundle is pulled from the global
+  // skill-definitions repo (its full directory: SKILL.md + reference files).
+  for (const stage of def.stages as Array<{ skill?: string }>) {
+    const name = (stage.skill || '').trim();
+    if (!name || written.has(name.toLowerCase())) continue;
+    const skill = getSkillDefinition(name);
+    if (!skill) continue;
+    for (const f of skill.files as Array<{ path: string; content: string; binary: boolean }>) {
+      if (f.binary) continue;
+      const dest = path.join(workspaceDir, '.claude', 'skills', name, f.path);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, f.content);
+    }
+    written.add(name.toLowerCase());
   }
   return true;
 }

@@ -45,6 +45,7 @@ function envKeys(): Record<string, string> {
 // They are NEVER written into scaffolded files — tooling inside the container
 // reads them straight from the environment.
 const CONTAINER_CRED_ENV = [
+  'ANTHROPIC_API_KEY', // authenticates the Claude CLI that executes pipeline stages
   'FIGMA_API_KEY',
   'APPCO_EMAIL',
   'APPCO_TOKEN',
@@ -654,7 +655,7 @@ export function registerRoutes(app: Express): void {
         '-e', `PROJECT_NAME=${projectName}`,
         ...credentialEnvArgs(),
         ...pipelineArgEnvArgs(req.body.args),
-        '-v', `${DATA_DIR}/projects/${projectName}:/workspace`,
+        '-v', `${PIPELINES_DIR}/${projectName}:/workspace`,
         '-v', `${DATA_DIR}/credentials:/claude-data`,
         '-v', `${DATA_DIR}/config:/claude-config`,
         BENDER_IMAGE,
@@ -773,7 +774,7 @@ export function registerRoutes(app: Express): void {
           '-e', 'PGID=1000',
           '-e', 'CLAUDE_CODE_SKIP_PERMISSIONS_DISCLAIMER=1',
           '-e', `PROJECT_NAME=${project}`,
-          '-v', `${DATA_DIR}/projects/${project}:/workspace`,
+          '-v', `${PIPELINES_DIR}/${project}:/workspace`,
           '-v', `${DATA_DIR}/credentials:/claude-data`,
           '-v', `${DATA_DIR}/config:/claude-config`,
           BENDER_IMAGE,
@@ -1282,45 +1283,169 @@ export function registerRoutes(app: Express): void {
     broadcast('pipeline-run-changed', { pipeline, runId });
   }
 
-  // Simulate one stage end-to-end; returns its terminal state.
+  // Prompt handed to Claude for a single stage. The skill does the real work;
+  // the trailing STAGE_RESULT line is how we read the success-criteria verdict.
+  function buildStagePrompt(stage: any, wsArtifacts: string): string {
+    return [
+      `You are executing ONE stage of an automated pipeline for this project, non-interactively.`,
+      ``,
+      `Stage: ${stage.stage_name}`,
+      `Skill: use the "${stage.skill}" skill (its instructions are in .claude/skills/${stage.skill}/SKILL.md).`,
+      stage.success_criteria ? `Success criteria: ${stage.success_criteria}` : ``,
+      ``,
+      `Perform the work that skill describes for this project. Pipeline inputs are available as environment variables (e.g. $ISSUE_URL).`,
+      `Save every artifact you produce into the directory $STAGE_ARTIFACTS (${wsArtifacts}):`,
+      `  - screenshots/images as .png or .svg`,
+      `  - videos as .mp4 or .webm`,
+      `  - a git diff as <name>.diff`,
+      `  - an external link as <name>.url (a text file whose contents are the URL)`,
+      `  - anything else (notes, reports, logs) as a normal file`,
+      ``,
+      `When you are done, evaluate the success criteria and print — as the VERY LAST line of your output — exactly one of:`,
+      `STAGE_RESULT: PASS - <one line on why the success criteria is met>`,
+      `STAGE_RESULT: FAIL - <one line on why it is not>`,
+    ].filter(Boolean).join('\n');
+  }
+
+  function parseVerdict(logs: string): { met: boolean | null; reason: string } {
+    const matches = [...logs.matchAll(/STAGE_RESULT:\s*(PASS|FAIL)\b[\s—:-]*(.*)/gi)];
+    if (!matches.length) return { met: null, reason: '' };
+    const last = matches[matches.length - 1];
+    return { met: /pass/i.test(last[1]), reason: (last[2] || '').trim() };
+  }
+
+  // Classify and copy the files a stage wrote into $STAGE_ARTIFACTS over to the
+  // served artifact dir, producing artifact records the UI can render.
+  function collectArtifacts(project: string, runId: number, stageIndex: number, srcDir: string): any[] {
+    const out: any[] = [];
+    if (!fs.existsSync(srcDir)) return out;
+    const destDir = stageArtifactDir(project, runId, stageIndex);
+    fs.rmSync(destDir, { recursive: true, force: true });
+    fs.mkdirSync(destDir, { recursive: true });
+
+    const walk = (dir: string, rel: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, entry.name);
+        const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) { walk(abs, relPath); continue; }
+        const lower = entry.name.toLowerCase();
+        const flat = relPath.replace(/\//g, '__');
+        try {
+          if (lower.endsWith('.url')) {
+            const url = fs.readFileSync(abs, 'utf-8').trim();
+            out.push({ type: 'link', name: entry.name.replace(/\.url$/i, ''), url });
+            continue;
+          }
+          fs.copyFileSync(abs, path.join(destDir, flat));
+          const size = fs.statSync(abs).size;
+          const url = artifactUrl(project, runId, stageIndex, flat);
+          const pathRel = `${ARTIFACTS_ROOT}/run-${runId}/stage-${stageIndex}/${flat}`;
+          if (/\.(png|jpe?g|gif|webp|svg)$/i.test(lower)) {
+            out.push({ type: 'screenshot', name: relPath, url, path: pathRel, size });
+          } else if (/\.(mp4|webm|mov|m4v)$/i.test(lower)) {
+            out.push({ type: 'video', name: relPath, url, path: pathRel, size });
+          } else if (/\.(diff|patch)$/i.test(lower)) {
+            const text = fs.readFileSync(abs, 'utf-8');
+            const additions = (text.match(/^\+(?!\+\+)/gm) || []).length;
+            const deletions = (text.match(/^-(?!--)/gm) || []).length;
+            out.push({ type: 'commit', name: relPath, message: relPath.replace(/\.(diff|patch)$/i, ''), url, path: pathRel, additions, deletions });
+          } else {
+            out.push({ type: 'file', name: relPath, url, path: pathRel, size });
+          }
+        } catch (err) {
+          console.error('artifact collect failed for', relPath, err);
+        }
+      }
+    };
+    walk(srcDir, '');
+    return out;
+  }
+
+  // Run one stage for real: execute its skill via the Claude CLI inside the
+  // pipeline container, stream Claude's output as the stage logs, read the
+  // success-criteria verdict, and collect the artifacts it produced.
   async function runSingleStage(stage: any, runId: number, pipeline: string, ctrl: { cancelled: boolean }): Promise<'completed' | 'failed' | 'cancelled'> {
     const db = getRunsDb();
+    const container = `${COMPOSE_PROJECT}-${pipeline}-1`;
+    const idx = stage.stage_index;
     const startISO = new Date().toISOString();
-    let logs = `[${startISO.slice(11, 19)}] Starting stage "${stage.stage_name}" (skill: ${stage.skill})`;
+    const ts = () => new Date().toISOString().slice(11, 19);
+    let logs = `[${ts()}] Starting stage "${stage.stage_name}" — running skill "${stage.skill}" via Claude in ${container}`;
+    const persist = () => db.prepare('UPDATE pipeline_stage_records SET logs = ? WHERE id = ?').run(logs, stage.id);
     db.prepare(
       `UPDATE pipeline_stage_records SET status = 'running', started_at = ?, completed_at = NULL, duration_ms = NULL, error = NULL, success_criteria_met = 0, logs = ?, artifacts = '[]' WHERE id = ?`
     ).run(startISO, logs, stage.id);
     broadcast('pipeline-run-changed', { pipeline, runId });
 
-    const totalMs = randInt(5000, 20000);
-    let waited = 0;
-    while (waited < totalMs) {
-      const chunk = Math.min(1500, totalMs - waited);
-      await cancellableSleep(chunk, ctrl);
-      if (ctrl.cancelled) return 'cancelled';
-      waited += chunk;
-      logs += '\n' + logLine();
-      db.prepare('UPDATE pipeline_stage_records SET logs = ? WHERE id = ?').run(logs, stage.id);
-      broadcast('pipeline-run-changed', { pipeline, runId });
-    }
+    // Make sure the pipeline container is up (no-op if already running).
+    spawnSync('docker', ['start', container], { stdio: 'ignore' });
 
-    const success = Math.random() > 0.25;
-    const criteriaMet = success && Math.random() > 0.2;
+    // Stage artifact drop inside the workspace (host path is the same dir via the
+    // /workspace bind mount), cleared before the run.
+    const wsArtifacts = `/workspace/.artifacts/stage-${idx}`;
+    const hostArtifacts = path.join(PIPELINES_DIR, pipeline, '.artifacts', `stage-${idx}`);
+    fs.rmSync(hostArtifacts, { recursive: true, force: true });
+    fs.mkdirSync(hostArtifacts, { recursive: true });
+    try { chownRecursive(path.join(PIPELINES_DIR, pipeline, '.artifacts'), 1000, 1000); } catch { /* best effort */ }
+
+    const prompt = buildStagePrompt(stage, wsArtifacts);
+
+    const exitCode = await new Promise<number>((resolve) => {
+      const p = spawn('docker', [
+        'exec', '-u', '1000:1000',
+        '-e', `STAGE_ARTIFACTS=${wsArtifacts}`,
+        '-e', `STAGE_PROMPT=${prompt}`,
+        container,
+        'bash', '-lc',
+        'mkdir -p "$STAGE_ARTIFACTS"; cd /workspace && claude --dangerously-skip-permissions -p "$STAGE_PROMPT" 2>&1',
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      let lastFlush = Date.now();
+      const onData = (d: Buffer) => {
+        logs += '\n' + d.toString().replace(/\s+$/, '');
+        const now = Date.now();
+        if (now - lastFlush > 1000) { lastFlush = now; persist(); broadcast('pipeline-run-changed', { pipeline, runId }); }
+      };
+      p.stdout?.on('data', onData);
+      p.stderr?.on('data', onData);
+
+      const killTimer = setInterval(() => { if (ctrl.cancelled) { try { p.kill('SIGKILL'); } catch { /* ignore */ } } }, 500);
+      p.on('error', (e) => { logs += `\n[exec error] ${e.message}`; clearInterval(killTimer); resolve(1); });
+      p.on('close', (code) => { clearInterval(killTimer); resolve(code ?? 1); });
+    });
+
+    if (ctrl.cancelled) return 'cancelled';
+
+    const verdict = parseVerdict(logs);
+    const artifacts = collectArtifacts(pipeline, runId, idx, hostArtifacts);
     const endISO = new Date().toISOString();
     const durationMs = new Date(endISO).getTime() - new Date(startISO).getTime();
-    const artifacts = await genArtifacts(pipeline, runId, stage.stage_index, stage.stage_name);
-    if (ctrl.cancelled) return 'cancelled';
-    const errMsg = success ? null : pick(ERRORS);
-    logs += '\n' + (success
-      ? `[${endISO.slice(11, 19)}] Stage completed successfully${criteriaMet ? ' — success criteria met' : ' — but success criteria NOT met'}`
-      : `[${endISO.slice(11, 19)}] Stage failed: ${errMsg}`);
 
+    // A stage passes only when Claude exited cleanly AND the criteria verdict
+    // isn't an explicit FAIL. Criteria-not-met halts downstream stages.
+    let status: 'completed' | 'failed';
+    let criteriaMet: boolean;
+    let errMsg: string | null = null;
+    if (exitCode !== 0) {
+      status = 'failed';
+      criteriaMet = false;
+      errMsg = `Claude exited with code ${exitCode}${verdict.reason ? ` — ${verdict.reason}` : ''}`;
+    } else if (verdict.met === false) {
+      status = 'failed';
+      criteriaMet = false;
+      errMsg = `Success criteria not met${verdict.reason ? `: ${verdict.reason}` : ''}`;
+    } else {
+      status = 'completed';
+      criteriaMet = true;
+    }
+
+    logs += `\n[${ts()}] Stage ${status} — ${criteriaMet ? 'success criteria met' : 'success criteria NOT met'}${artifacts.length ? ` · ${artifacts.length} artifact${artifacts.length === 1 ? '' : 's'}` : ''}`;
     db.prepare(
       `UPDATE pipeline_stage_records SET status = ?, completed_at = ?, duration_ms = ?, error = ?, success_criteria_met = ?, logs = ?, artifacts = ? WHERE id = ?`
-    ).run(success ? 'completed' : 'failed', endISO, durationMs, errMsg, criteriaMet ? 1 : 0, logs, JSON.stringify(artifacts), stage.id);
+    ).run(status, endISO, durationMs, errMsg, criteriaMet ? 1 : 0, logs, JSON.stringify(artifacts), stage.id);
     broadcast('pipeline-run-changed', { pipeline, runId });
 
-    return success ? 'completed' : 'failed';
+    return status;
   }
 
   // Parallel fork/join executor: a stage runs once all its predecessors have
