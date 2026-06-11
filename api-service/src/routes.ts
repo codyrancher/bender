@@ -224,12 +224,19 @@ function getContainerStatus(containerName: string): string {
 
 interface BenderJson {
   template?: string;
+  uid?: string;
   sidecars: string[];
   browserPort?: number;
   browserHost?: string;
   externalPorts?: Record<string, number>;
   vars?: Record<string, string>;
   args?: Record<string, string>;
+}
+
+// A pipeline's UID (assigned at creation). Runs are scoped to it so a reused
+// name never inherits an old pipeline's runs. null for pre-UID pipelines.
+function pipelineUid(project: string): string | null {
+  return readBenderJson(project)?.uid ?? null;
 }
 
 // Build `-e NAME=value` docker args from user-supplied pipeline args (declared
@@ -830,6 +837,7 @@ export function registerRoutes(app: Express): void {
 
       const harnessJson: BenderJson = {
         ...(template && { template }),
+        uid: `${Date.now().toString(36)}-${hexId(8)}`,
         sidecars: sidecars.map(s => s.suffix),
         browserPort,
         ...(browserNetHost && { browserHost: browserNetHost }),
@@ -1146,6 +1154,14 @@ export function registerRoutes(app: Express): void {
           fs.rmSync(rancherDataPath, { recursive: true, force: true });
         }
 
+        // Purge this pipeline's run history (stage records cascade) so a reused
+        // name can't inherit it.
+        try {
+          const rdb = getRunsDb();
+          rdb.prepare('DELETE FROM pipeline_stage_records WHERE run_id IN (SELECT id FROM pipeline_runs WHERE pipeline = ?)').run(project);
+          rdb.prepare('DELETE FROM pipeline_runs WHERE pipeline = ?').run(project);
+        } catch (e) { sendEvent('log', `Run-history cleanup warning: ${e}`); }
+
         broadcast('pipelines-changed');
         sendEvent('done');
       } catch (err) {
@@ -1241,8 +1257,11 @@ export function registerRoutes(app: Express): void {
       if (!colNames.has('artifacts')) runsDb.exec('ALTER TABLE pipeline_stage_records ADD COLUMN artifacts TEXT');
       if (!colNames.has('skill_md')) runsDb.exec('ALTER TABLE pipeline_stage_records ADD COLUMN skill_md TEXT');
       if (!colNames.has('next_indices')) runsDb.exec('ALTER TABLE pipeline_stage_records ADD COLUMN next_indices TEXT');
-      const runCols = runsDb.prepare('PRAGMA table_info(pipeline_runs)').all() as { name: string }[];
-      if (!new Set(runCols.map(c => c.name)).has('pipeline_md')) runsDb.exec('ALTER TABLE pipeline_runs ADD COLUMN pipeline_md TEXT');
+      const runCols = new Set((runsDb.prepare('PRAGMA table_info(pipeline_runs)').all() as { name: string }[]).map(c => c.name));
+      if (!runCols.has('pipeline_md')) runsDb.exec('ALTER TABLE pipeline_runs ADD COLUMN pipeline_md TEXT');
+      // Per-pipeline UID: runs are scoped to a specific pipeline instance so a
+      // reused name doesn't inherit a previous pipeline's run history.
+      if (!runCols.has('pipeline_uid')) runsDb.exec('ALTER TABLE pipeline_runs ADD COLUMN pipeline_uid TEXT');
 
       // Any run/stage left 'running' belongs to a prior process — mark it cancelled
       runsDb.exec(`
@@ -1777,14 +1796,16 @@ export function registerRoutes(app: Express): void {
       const db = getRunsDb();
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
+      // Only this pipeline instance's runs (scoped by UID, NULL-safe for legacy).
+      const uid = pipelineUid(req.params.name);
       const runs = db.prepare(
-        `SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number
-         FROM pipeline_runs WHERE pipeline = ? ORDER BY id DESC LIMIT ? OFFSET ?`
-      ).all(req.params.name, limit, offset) as any[];
+        `SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number
+         FROM pipeline_runs WHERE pipeline = ? AND pipeline_uid IS ? ORDER BY id DESC LIMIT ? OFFSET ?`
+      ).all(req.params.name, uid, limit, offset) as any[];
 
       const countRow = db.prepare(
-        'SELECT COUNT(*) as total FROM pipeline_runs WHERE pipeline = ?'
-      ).get(req.params.name) as { total: number };
+        'SELECT COUNT(*) as total FROM pipeline_runs WHERE pipeline = ? AND pipeline_uid IS ?'
+      ).get(req.params.name, uid) as { total: number };
 
       const stageStmt = db.prepare(
         'SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index'
@@ -1874,8 +1895,8 @@ export function registerRoutes(app: Express): void {
 
       const now = new Date().toISOString();
       const runResult = db.prepare(
-        'INSERT INTO pipeline_runs (pipeline, status, started_at, pipeline_md) VALUES (?, ?, ?, ?)'
-      ).run(pipeline, 'running', now, pipelineMdSnapshot);
+        'INSERT INTO pipeline_runs (pipeline, status, started_at, pipeline_md, pipeline_uid) VALUES (?, ?, ?, ?, ?)'
+      ).run(pipeline, 'running', now, pipelineMdSnapshot, pipelineUid(pipeline));
 
       const runId = Number(runResult.lastInsertRowid);
       const insertStage = db.prepare(
@@ -1894,7 +1915,7 @@ export function registerRoutes(app: Express): void {
       });
       insertMany();
 
-      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stageRecords = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
 
       broadcast('pipeline-run-changed', { pipeline, runId });
@@ -1982,7 +2003,7 @@ export function registerRoutes(app: Express): void {
         ).run('failed', now, runId);
       }
 
-      const updatedRun = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
+      const updatedRun = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stageRecords = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
 
       broadcast('pipeline-run-changed', { pipeline: req.params.name, runId: Number(runId) });
@@ -2014,7 +2035,7 @@ export function registerRoutes(app: Express): void {
       const db = getRunsDb();
       const runId = Number(req.params.runId);
       cancelRun(runId, req.params.name);
-      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stages = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
       res.json({ run: { ...run as any, stages } });
     } catch (err) {
@@ -2158,7 +2179,7 @@ export function registerRoutes(app: Express): void {
       broadcast('pipeline-run-changed', { pipeline, runId });
       startExecution(runId, pipeline);
 
-      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
       const stages = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
       res.json({ run: { ...run as any, stages } });
     } catch (err) {
