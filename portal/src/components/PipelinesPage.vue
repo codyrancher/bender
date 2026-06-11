@@ -577,10 +577,14 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
           v-for="pl in pipelines"
           :key="pl.name"
           class="pipeline-card"
+          :class="{ deleting: pl.status === 'deleting' }"
         >
           <div class="pipeline-header">
             <div class="pipeline-name-row">
               <span class="pipeline-name">{{ pl.name }}</span>
+              <span v-if="pl.status === 'deleting'" class="deleting-badge">
+                <span class="deleting-spinner"></span> Deleting…
+              </span>
               <div class="header-actions">
                 <button
                   class="icon-btn"
@@ -1240,8 +1244,34 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
   border: 1px solid var(--color-border-dark);
   border-radius: 8px;
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.2s;
 }
+
+.pipeline-card.deleting {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.deleting-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-status-stopped);
+}
+
+.deleting-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--color-status-stopped);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .pipeline-header {
   padding: 14px 20px;

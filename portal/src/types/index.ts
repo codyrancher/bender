@@ -1,4 +1,4 @@
-export type PipelineStatus = 'running' | 'stopped' | 'not_found'
+export type PipelineStatus = 'running' | 'stopped' | 'not_found' | 'deleting'
 
 export interface PipelineStage {
   name: string

@@ -669,7 +669,7 @@ export function registerRoutes(app: Express): void {
           const fullPath = path.join(PIPELINES_DIR, name);
           if (fs.statSync(fullPath).isDirectory()) {
             const containerName = `${COMPOSE_PROJECT}-${name}-1`;
-            const status = getContainerStatus(containerName);
+            const status = fs.existsSync(path.join(fullPath, '.deleting')) ? 'deleting' : getContainerStatus(containerName);
             const meta = readBenderJson(name);
             const browserPort = meta?.browserPort ?? (meta?.template ? getBrowserPort(meta.template) : null);
 
@@ -1070,106 +1070,66 @@ export function registerRoutes(app: Express): void {
   });
 
   // Delete a project (streams SSE logs for shutdown script progress)
-  app.delete('/api/pipelines/:pipeline', (req: Request, res: Response) => {
-    const pipeline = req.params.pipeline;
-    const project = pipeline;
-    const containerName = `${COMPOSE_PROJECT}-${project}-1`;
+  function dockerAsync(args: string[]): Promise<void> {
+    return new Promise((resolve) => {
+      const p = spawn('docker', args, { stdio: 'ignore' });
+      p.on('close', () => resolve());
+      p.on('error', () => resolve());
+    });
+  }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    function sendEvent(type: string, message?: string) {
-      const data = message !== undefined ? { type, message } : { type };
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-    }
-
-    function runShutdownScript(): Promise<void> {
-      return new Promise((resolve) => {
-        // Check if shutdown script exists in the running container
-        const check = spawnSync('docker', [
-          'exec', containerName, 'test', '-f', '/workspace/shutdown.sh',
-        ], { encoding: 'utf-8' });
-
-        if (check.status !== 0) {
-          resolve();
-          return;
+  // Tear down a pipeline's resources without blocking the event loop: bounded
+  // shutdown hook, async `docker rm -f` for the container + sidecars (k3s is
+  // slow to stop), async fs removal of the (large) workspace, then purge runs.
+  async function cleanupPipelineAsync(project: string, containerName: string): Promise<void> {
+    try {
+      if (getContainerStatus(containerName) === 'running') {
+        const hasShutdown = spawnSync('docker', ['exec', containerName, 'test', '-f', '/workspace/shutdown.sh'], { stdio: 'ignore' }).status === 0;
+        if (hasShutdown) {
+          await new Promise<void>((resolve) => {
+            const p = spawn('docker', ['exec', '-u', '1000:1000', containerName, 'bash', '/workspace/shutdown.sh'], { stdio: 'ignore' });
+            const t = setTimeout(() => { try { p.kill(); } catch { /* ignore */ } resolve(); }, 120_000);
+            p.on('close', () => { clearTimeout(t); resolve(); });
+            p.on('error', () => { clearTimeout(t); resolve(); });
+          });
         }
-
-        sendEvent('log', 'Running shutdown script...');
-
-        const timeout = setTimeout(() => {
-          sendEvent('log', 'Shutdown script timed out, proceeding with deletion...');
-          proc.kill();
-          resolve();
-        }, 300_000); // 5 minute timeout
-
-        const proc = spawn('docker', [
-          'exec', '-u', '1000:1000', containerName,
-          'bash', '/workspace/shutdown.sh',
-        ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-        let buffer = '';
-        function processOutput(chunk: Buffer) {
-          buffer += chunk.toString();
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            if (line.trim()) sendEvent('log', line);
-          }
-        }
-
-        proc.stdout?.on('data', processOutput);
-        proc.stderr?.on('data', processOutput);
-
-        proc.on('close', () => {
-          clearTimeout(timeout);
-          if (buffer.trim()) sendEvent('log', buffer.trim());
-          resolve();
-        });
-      });
-    }
-
-    (async () => {
-      try {
-        // Run shutdown script before teardown (sidecars still running)
-        if (getContainerStatus(containerName) === 'running') {
-          await runShutdownScript();
-        }
-
-        sendEvent('log', 'Stopping containers...');
-        stopPortForwardsForProject(project);
-        removeSidecars(project);
-        spawnSync('docker', ['stop', containerName], { encoding: 'utf-8' });
-        spawnSync('docker', ['rm', containerName], { encoding: 'utf-8' });
-
-        sendEvent('log', 'Removing project files...');
-        const projectPath = path.join(PIPELINES_DIR, project);
-        if (fs.existsSync(projectPath)) {
-          fs.rmSync(projectPath, { recursive: true, force: true });
-        }
-
-        const rancherDataPath = path.join(DATA_DIR, 'rancher-data', project);
-        if (fs.existsSync(rancherDataPath)) {
-          fs.rmSync(rancherDataPath, { recursive: true, force: true });
-        }
-
-        // Purge this pipeline's run history (stage records cascade) so a reused
-        // name can't inherit it.
-        try {
-          const rdb = getRunsDb();
-          rdb.prepare('DELETE FROM pipeline_stage_records WHERE run_id IN (SELECT id FROM pipeline_runs WHERE pipeline = ?)').run(project);
-          rdb.prepare('DELETE FROM pipeline_runs WHERE pipeline = ?').run(project);
-        } catch (e) { sendEvent('log', `Run-history cleanup warning: ${e}`); }
-
-        broadcast('pipelines-changed');
-        sendEvent('done');
-      } catch (err) {
-        sendEvent('error', String(err));
-      } finally {
-        res.end();
       }
-    })();
+
+      stopPortForwardsForProject(project);
+      await dockerAsync(['rm', '-f', containerName]);
+      for (const s of getSidecarContainerNames(project)) await dockerAsync(['rm', '-f', s]);
+
+      await fs.promises.rm(path.join(PIPELINES_DIR, project), { recursive: true, force: true }).catch(() => {});
+      await fs.promises.rm(path.join(DATA_DIR, 'rancher-data', project), { recursive: true, force: true }).catch(() => {});
+
+      try {
+        const rdb = getRunsDb();
+        rdb.prepare('DELETE FROM pipeline_stage_records WHERE run_id IN (SELECT id FROM pipeline_runs WHERE pipeline = ?)').run(project);
+        rdb.prepare('DELETE FROM pipeline_runs WHERE pipeline = ?').run(project);
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error('pipeline cleanup failed for', project, err);
+    } finally {
+      broadcast('pipelines-changed');
+    }
+  }
+
+  app.delete('/api/pipelines/:pipeline', (req: Request, res: Response) => {
+    const project = req.params.pipeline;
+    const containerName = `${COMPOSE_PROJECT}-${project}-1`;
+    const projectPath = path.join(PIPELINES_DIR, project);
+
+    if (!fs.existsSync(projectPath)) {
+      return res.status(404).json({ error: 'Pipeline not found' });
+    }
+
+    // Mark deleting + respond immediately; the heavy teardown runs detached with
+    // async I/O so a delete never blocks the rest of the API.
+    try { fs.writeFileSync(path.join(projectPath, '.deleting'), new Date().toISOString()); } catch { /* ignore */ }
+    broadcast('pipelines-changed');
+    res.json({ status: 'deleting', pipeline: project });
+
+    void cleanupPipelineAsync(project, containerName);
   });
 
   // --- Pipeline definitions ---
