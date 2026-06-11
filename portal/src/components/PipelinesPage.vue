@@ -184,7 +184,7 @@ async function startRunDirect(pipeline: string) {
 }
 
 function isRunActive(pipeline: string): boolean {
-  return latestRun(pipeline)?.status === 'running'
+  return latestRun(pipeline)?.status === 'running' || startingRuns.value.has(pipeline)
 }
 
 // Per-pipeline run ordinal for display; falls back to the global id.
@@ -192,20 +192,39 @@ function runNo(run: { run_number?: number; id: number }): number {
   return run.run_number ?? run.id
 }
 
+function setStarting(pipeline: string, on: boolean) {
+  const next = new Set(startingRuns.value)
+  if (on) next.add(pipeline); else next.delete(pipeline)
+  startingRuns.value = next
+}
+
 // Run button doubles as a cancel toggle while a run is in flight
 async function toggleRun(pipeline: string, e: Event) {
   e.stopPropagation()
   const run = latestRun(pipeline)
-  if (run && run.status === 'running') {
-    try { await api.cancelPipelineRun(pipeline, run.id); await fetchRuns(pipeline) } catch {}
+  if ((run && run.status === 'running') || startingRuns.value.has(pipeline)) {
+    setStarting(pipeline, false)
+    if (run && run.status === 'running') {
+      try { await api.cancelPipelineRun(pipeline, run.id); await fetchRuns(pipeline) } catch {}
+    }
     return
   }
-  // Gate the run on the stage-executor Claude CLI being signed in.
+  // Optimistic feedback: flip to Cancel + show the entry stage running now.
+  setStarting(pipeline, true)
   try {
+    // Gate the run on the stage-executor Claude CLI being signed in.
     const auth = await api.getClaudeAuth(pipeline)
-    if (!auth.authenticated) { authModal.value = { pipeline, code: '', loading: false, error: '' }; return }
-  } catch { /* if the check itself fails, let the run proceed and surface the error in logs */ }
-  await startRun(pipeline)
+    if (!auth.authenticated) {
+      setStarting(pipeline, false)
+      authModal.value = { pipeline, code: '', loading: false, error: '' }
+      return
+    }
+    await startRun(pipeline)
+  } catch {
+    // leave it to the next poll/fetch to reflect reality
+  } finally {
+    setStarting(pipeline, false)
+  }
 }
 
 async function startRun(pipeline: string) {
@@ -484,6 +503,37 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
   const run = latestRun(pipeline)
   return run?.stages || []
 }
+
+// Pipelines whose run we've just kicked off, for optimistic UI before the real
+// run record arrives (so the button flips to Cancel and the entry stage shows
+// running immediately).
+const startingRuns = ref<Set<string>>(new Set())
+
+function isEntryStage(stages: PipelineStage[], index: number): boolean {
+  return !stages.some(s => (s.next || []).includes(index))
+}
+
+// Stage records to render on the graph: the real latest-run stages, or — while
+// a run is optimistically starting and the real record hasn't landed yet — a
+// synthetic set with the entry stage(s) running and the rest pending.
+function displayStages(pipeline: string): PipelineStageRecord[] {
+  if (startingRuns.value.has(pipeline) && latestRun(pipeline)?.status !== 'running') {
+    const defs = pipelines.value.find(p => p.name === pipeline)?.stages || []
+    const nowIso = new Date().toISOString()
+    return defs.map((_, i) => {
+      const running = isEntryStage(defs, i)
+      return {
+        stage_index: i,
+        status: running ? 'running' : 'pending',
+        started_at: running ? nowIso : null,
+        completed_at: null,
+        duration_ms: null,
+        success_criteria_met: 0,
+      } as unknown as PipelineStageRecord
+    })
+  }
+  return latestRunStages(pipeline)
+}
 </script>
 
 <template>
@@ -559,14 +609,14 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
               <template #node="{ stage, index }">
                 <div
                   class="node-stage gnode"
-                  :class="latestRunStages(pl.name)[index]?.status || 'pending'"
+                  :class="displayStages(pl.name)[index]?.status || 'pending'"
                   @click="selectStage(pl.name, index, latestRun(pl.name)?.id ?? null)"
                 >
-                  <svg v-if="latestRunStages(pl.name)[index]?.status === 'running'" class="running-ring">
+                  <svg v-if="displayStages(pl.name)[index]?.status === 'running'" class="running-ring">
                     <rect />
                   </svg>
-                  <div class="stage-elapsed" :style="{ color: stageStatusColor(latestRunStages(pl.name)[index]?.status || 'pending') }">
-                    {{ latestRunStages(pl.name)[index] ? liveStageDuration(latestRunStages(pl.name)[index]) : '—' }}
+                  <div class="stage-elapsed" :style="{ color: stageStatusColor(displayStages(pl.name)[index]?.status || 'pending') }">
+                    {{ displayStages(pl.name)[index] ? liveStageDuration(displayStages(pl.name)[index]) : '—' }}
                   </div>
                   <div class="stage-info">
                     <span class="stage-name">{{ stage.name }}</span>
@@ -575,7 +625,7 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
                     </span>
                   </div>
                   <div
-                    v-if="latestRunStages(pl.name)[index]?.success_criteria_met"
+                    v-if="displayStages(pl.name)[index]?.success_criteria_met"
                     class="criteria-check"
                     title="Success criteria met"
                   >✓</div>
