@@ -68,7 +68,7 @@ async function confirmDelete() {
   }
 }
 
-const mdEditor = ref<{ pipeline: string; content: string } | null>(null)
+const mdEditor = ref<{ pipeline: string; content: string; claude: string } | null>(null)
 const skillEditor = ref<{
   pipeline: string
   skill: string
@@ -282,8 +282,11 @@ function formatSize(bytes?: number): string {
 
 async function openMdEditor(pipeline: string) {
   try {
-    const data = await api.getPipelineMd(pipeline)
-    mdEditor.value = { pipeline, content: data.content }
+    const [md, claude] = await Promise.all([
+      api.getPipelineMd(pipeline),
+      api.getPipelineClaudeMd(pipeline),
+    ])
+    mdEditor.value = { pipeline, content: md.content, claude: claude.content }
   } catch {}
 }
 
@@ -291,6 +294,11 @@ async function saveMd(content: string) {
   if (!mdEditor.value) return
   await api.savePipelineMd(mdEditor.value.pipeline, content)
   await pipelinesStore.fetchPipelines()
+}
+
+async function saveClaude(content: string) {
+  if (!mdEditor.value) return
+  await api.savePipelineClaudeMd(mdEditor.value.pipeline, content)
 }
 
 async function rerunFromMd(value: string) {
@@ -1048,12 +1056,13 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
     <!-- pipeline.md editor -->
     <EditorModal
       v-if="mdEditor"
-      title="Edit pipeline.md"
+      title="Edit pipeline"
       :subtitle="mdEditor.pipeline"
-      :content="mdEditor.content"
-      placeholder="# Pipeline&#10;&#10;## Stages&#10;&#10;### 1. Stage Name&#10;**Skill:** skill-name&#10;**Success Criteria:** ...&#10;Description"
+      :tabs="[
+        { key: 'pipeline', label: 'pipeline.md', content: mdEditor.content, placeholder: '# Pipeline\n\n## Stages\n\n### 1. Stage Name\n**Skill:** skill-name\n**Success Criteria:** ...\nDescription', onSave: saveMd },
+        { key: 'claude', label: 'CLAUDE.md', content: mdEditor.claude, placeholder: '# Project instructions for the agent at run time…', onSave: saveClaude },
+      ]"
       :rerun-options="[{ label: 'Rerun pipeline', value: 'pipeline', hint: 'Start a fresh run with the new definition' }]"
-      :on-save="saveMd"
       :on-rerun="rerunFromMd"
       @close="mdEditor = null"
     />

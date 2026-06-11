@@ -7,34 +7,60 @@ interface RerunOption {
   hint?: string
 }
 
+interface EditorTab {
+  key: string
+  label: string
+  content: string
+  placeholder?: string
+  onSave: (content: string) => Promise<void>
+}
+
 const props = defineProps<{
   title: string
   subtitle?: string
-  content: string
+  // Single-document mode: pass content + onSave. Tabbed mode: pass tabs.
+  content?: string
   placeholder?: string
+  tabs?: EditorTab[]
   rerunOptions?: RerunOption[]
-  onSave: (content: string) => Promise<void>
+  onSave?: (content: string) => Promise<void>
   onRerun?: (value: string) => Promise<void>
 }>()
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
-const text = ref(props.content)
-const lastSaved = ref(props.content)
+// Unify single-document and tabbed modes into one internal list of documents.
+const docs = computed<EditorTab[]>(() =>
+  props.tabs && props.tabs.length
+    ? props.tabs
+    : [{ key: 'main', label: props.title, content: props.content ?? '', placeholder: props.placeholder, onSave: props.onSave ?? (async () => {}) }],
+)
+
+const active = ref(0)
+const texts = ref<string[]>(docs.value.map(d => d.content))
+const saved = ref<string[]>(docs.value.map(d => d.content))
 const phase = ref<'edit' | 'rerun'>('edit')
 const busy = ref(false)
 const error = ref('')
 
-const dirty = computed(() => text.value !== lastSaved.value)
+const showTabs = computed(() => docs.value.length > 1)
+const dirtyTabs = computed(() => texts.value.map((t, i) => t !== saved.value[i]))
+const anyDirty = computed(() => dirtyTabs.value.some(Boolean))
+const activePlaceholder = computed(() => docs.value[active.value]?.placeholder)
 const rerunOptions = computed(() => props.rerunOptions || [])
 
 async function save() {
-  if (busy.value) return
+  if (busy.value || !anyDirty.value) return
   busy.value = true
   error.value = ''
   try {
-    await props.onSave(text.value)
-    lastSaved.value = text.value
+    // Persist every changed tab, then offer a rerun once everything is saved.
+    for (let i = 0; i < docs.value.length; i++) {
+      if (texts.value[i] !== saved.value[i]) {
+        await docs.value[i].onSave(texts.value[i])
+        saved.value[i] = texts.value[i]
+      }
+    }
     if (rerunOptions.value.length && props.onRerun) {
       phase.value = 'rerun'
     } else {
@@ -81,21 +107,31 @@ function close() {
 
         <!-- Edit phase -->
         <template v-if="phase === 'edit'">
+          <div v-if="showTabs" class="editor-tabs">
+            <button
+              v-for="(d, i) in docs"
+              :key="d.key"
+              :class="{ active: active === i }"
+              @click="active = i"
+            >
+              {{ d.label }}<span v-if="dirtyTabs[i]" class="editor-tab-dot">●</span>
+            </button>
+          </div>
           <div class="editor-body">
             <textarea
-              v-model="text"
+              v-model="texts[active]"
               class="editor-textarea"
-              :placeholder="placeholder"
+              :placeholder="activePlaceholder"
               spellcheck="false"
               autofocus
             ></textarea>
           </div>
           <div v-if="error" class="editor-error">{{ error }}</div>
           <div class="editor-footer">
-            <span class="dirty-indicator" v-if="dirty">● Unsaved changes</span>
+            <span class="dirty-indicator" v-if="anyDirty">● Unsaved changes</span>
             <div class="footer-buttons">
               <button class="modal-btn cancel" :disabled="busy" @click="close">Cancel</button>
-              <button class="modal-btn create" :disabled="busy || !dirty" @click="save">
+              <button class="modal-btn create" :disabled="busy || !anyDirty" @click="save">
                 {{ busy ? 'Saving...' : 'Save' }}
               </button>
             </div>
@@ -197,6 +233,36 @@ function close() {
   background: var(--color-bg-element);
   color: var(--color-text-hover);
 }
+
+.editor-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 20px 0;
+  flex-shrink: 0;
+}
+
+.editor-tabs button {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border-medium);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--color-bg-element);
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.editor-tabs button:hover { color: var(--color-text-hover); }
+.editor-tabs button.active {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+}
+
+.editor-tab-dot { margin-left: 6px; color: var(--color-warning); font-size: 10px; }
 
 .editor-body {
   flex: 1;

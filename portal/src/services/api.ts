@@ -482,6 +482,18 @@ export const api = {
     })
   },
 
+  async getPipelineClaudeMd(pipeline: string): Promise<{ content: string }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-md`)
+  },
+
+  async savePipelineClaudeMd(pipeline: string, content: string): Promise<{ status: string }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-md`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+  },
+
   async getSkill(pipeline: string, skill: string): Promise<{ content: string; exists: boolean }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/skills/${skill}`)
   },

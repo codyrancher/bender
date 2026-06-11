@@ -2190,6 +2190,33 @@ export function registerRoutes(app: Express): void {
     }
   });
 
+  // Live CLAUDE.md for a pipeline workspace — the agent's run-time instructions.
+  app.get('/api/pipelines/:name/claude-md', (req: Request, res: Response) => {
+    try {
+      const claudePath = path.join(PIPELINES_DIR, req.params.name, 'CLAUDE.md');
+      const content = fs.existsSync(claudePath) ? fs.readFileSync(claudePath, 'utf-8') : '';
+      res.json({ content });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.put('/api/pipelines/:name/claude-md', (req: Request, res: Response) => {
+    try {
+      const pipelineDir = path.join(PIPELINES_DIR, req.params.name);
+      if (!fs.existsSync(pipelineDir)) {
+        return res.status(404).json({ error: 'Pipeline not found' });
+      }
+      const content = typeof req.body.content === 'string' ? req.body.content : '';
+      const claudePath = path.join(pipelineDir, 'CLAUDE.md');
+      fs.writeFileSync(claudePath, content);
+      try { fs.chownSync(claudePath, 1000, 1000); } catch { /* best effort */ }
+      res.json({ status: 'saved' });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Resolve a skill's SKILL.md path within a pipeline workspace, guarding against traversal
   function resolveSkillPath(project: string, skill: string): string | null {
     if (!/^[a-zA-Z0-9._-]+$/.test(skill)) return null;
