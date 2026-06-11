@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import Tabs from './Tabs.vue'
 
 interface RerunOption {
   label: string
@@ -10,9 +11,14 @@ interface RerunOption {
 interface EditorTab {
   key: string
   label: string
-  content: string
+  // Text tab: an editable document.
+  content?: string
   placeholder?: string
-  onSave: (content: string) => Promise<void>
+  onSave?: (content: string) => Promise<void>
+  // Custom tab: rendered via a #<key> slot; the parent owns its dirty/save.
+  custom?: boolean
+  dirty?: boolean
+  onSaveCustom?: () => Promise<void>
 }
 
 const props = defineProps<{
@@ -33,21 +39,32 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const docs = computed<EditorTab[]>(() =>
   props.tabs && props.tabs.length
     ? props.tabs
-    : [{ key: 'main', label: props.title, content: props.content ?? '', placeholder: props.placeholder, onSave: props.onSave ?? (async () => {}) }],
+    : [{ key: 'main', label: props.title, content: props.content ?? '', placeholder: props.placeholder, onSave: props.onSave }],
 )
 
-const active = ref(0)
-const texts = ref<string[]>(docs.value.map(d => d.content))
-const saved = ref<string[]>(docs.value.map(d => d.content))
+const activeKey = ref(docs.value[0]?.key ?? 'main')
+const activeIndex = computed(() => {
+  const i = docs.value.findIndex(d => d.key === activeKey.value)
+  return i < 0 ? 0 : i
+})
+const activeDoc = computed(() => docs.value[activeIndex.value])
+
+// Working copies for text tabs (custom tabs track their own dirty state).
+const texts = ref<string[]>(docs.value.map(d => d.content ?? ''))
+const saved = ref<string[]>(docs.value.map(d => d.content ?? ''))
 const phase = ref<'edit' | 'rerun'>('edit')
 const busy = ref(false)
 const error = ref('')
 
-const showTabs = computed(() => docs.value.length > 1)
-const dirtyTabs = computed(() => texts.value.map((t, i) => t !== saved.value[i]))
-const anyDirty = computed(() => dirtyTabs.value.some(Boolean))
-const activePlaceholder = computed(() => docs.value[active.value]?.placeholder)
 const rerunOptions = computed(() => props.rerunOptions || [])
+const showTabs = computed(() => docs.value.length > 1)
+const dirtyTabs = computed(() =>
+  docs.value.map((d, i) => (d.custom ? !!d.dirty : texts.value[i] !== saved.value[i])),
+)
+const anyDirty = computed(() => dirtyTabs.value.some(Boolean))
+const tabItems = computed(() =>
+  docs.value.map((d, i) => ({ key: d.key, label: d.label, dirty: dirtyTabs.value[i] })),
+)
 
 async function save() {
   if (busy.value || !anyDirty.value) return
@@ -56,8 +73,11 @@ async function save() {
   try {
     // Persist every changed tab, then offer a rerun once everything is saved.
     for (let i = 0; i < docs.value.length; i++) {
-      if (texts.value[i] !== saved.value[i]) {
-        await docs.value[i].onSave(texts.value[i])
+      const d = docs.value[i]
+      if (d.custom) {
+        if (d.dirty && d.onSaveCustom) await d.onSaveCustom()
+      } else if (texts.value[i] !== saved.value[i]) {
+        if (d.onSave) await d.onSave(texts.value[i])
         saved.value[i] = texts.value[i]
       }
     }
@@ -107,24 +127,20 @@ function close() {
 
         <!-- Edit phase -->
         <template v-if="phase === 'edit'">
-          <div v-if="showTabs" class="editor-tabs">
-            <button
-              v-for="(d, i) in docs"
-              :key="d.key"
-              :class="{ active: active === i }"
-              @click="active = i"
-            >
-              {{ d.label }}<span v-if="dirtyTabs[i]" class="editor-tab-dot">●</span>
-            </button>
+          <div v-if="showTabs" class="editor-tabbar">
+            <Tabs v-model="activeKey" :tabs="tabItems" />
           </div>
           <div class="editor-body">
             <textarea
-              v-model="texts[active]"
+              v-show="!activeDoc.custom"
+              v-model="texts[activeIndex]"
               class="editor-textarea"
-              :placeholder="activePlaceholder"
+              :placeholder="activeDoc.placeholder"
               spellcheck="false"
-              autofocus
             ></textarea>
+            <div v-if="activeDoc.custom" class="editor-custom">
+              <slot :name="activeDoc.key" />
+            </div>
           </div>
           <div v-if="error" class="editor-error">{{ error }}</div>
           <div class="editor-footer">
@@ -234,41 +250,21 @@ function close() {
   color: var(--color-text-hover);
 }
 
-.editor-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 20px 0;
+.editor-tabbar {
+  padding: 14px 20px 0;
   flex-shrink: 0;
 }
-
-.editor-tabs button {
-  padding: 6px 14px;
-  border: 1px solid var(--color-border-medium);
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.editor-tabs button:hover { color: var(--color-text-hover); }
-.editor-tabs button.active {
-  background: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  border-color: var(--color-accent);
-}
-
-.editor-tab-dot { margin-left: 6px; color: var(--color-warning); font-size: 10px; }
 
 .editor-body {
   flex: 1;
   overflow: hidden;
   padding: 16px 20px;
   display: flex;
+}
+
+.editor-custom {
+  flex: 1;
+  overflow: auto;
 }
 
 .editor-textarea {

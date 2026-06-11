@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { TEMPLATE_IDS, getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, TemplateKeyDef, listTemplates, createTemplate, updateTemplateMeta, deleteTemplate, getTemplateIcon, setTemplateIcon, getTemplatePath, renderString } from './templates';
 import { extractPipelineFlags } from './pipelineFlags';
 import { broadcast } from './events';
-import { materializeInto as materializeDefinition, writeDefinition, getDefinition } from './definitions';
+import { materializeInto as materializeDefinition, writeDefinition, getDefinition, parseArgs } from './definitions';
 
 const PIPELINES_DIR = '/data/pipelines';
 const COMPOSE_PROJECT = 'bender';
@@ -1587,6 +1587,9 @@ export function registerRoutes(app: Express): void {
         '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`,
         '-e', `STAGE_ARTIFACTS=${wsArtifacts}`,
         '-e', `STAGE_PROMPT=${prompt}`,
+        // Re-inject pipeline args from .bender.json so edits made between runs
+        // (via the args editor) take effect without recreating the container.
+        ...pipelineArgEnvArgs(readBenderJson(pipeline)?.args),
         container,
         'bash', '-lc',
         'mkdir -p "$STAGE_ARTIFACTS"; cd /workspace && claude --dangerously-skip-permissions --output-format stream-json --verbose -p "$STAGE_PROMPT" 2>&1',
@@ -2212,6 +2215,54 @@ export function registerRoutes(app: Express): void {
       fs.writeFileSync(claudePath, content);
       try { fs.chownSync(claudePath, 1000, 1000); } catch { /* best effort */ }
       res.json({ status: 'saved' });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Declared pipeline args (from the workspace pipeline.md "## Args" section) with
+  // their current values (from .bender.json). Values feed future runs as env vars.
+  app.get('/api/pipelines/:name/args', (req: Request, res: Response) => {
+    try {
+      const dir = path.join(PIPELINES_DIR, req.params.name);
+      if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Pipeline not found' });
+      const mdPath = path.join(dir, 'pipeline.md');
+      const md = fs.existsSync(mdPath) ? fs.readFileSync(mdPath, 'utf-8') : '';
+      const declared = parseArgs(md);
+      const current = readBenderJson(req.params.name)?.args || {};
+      const args = declared.map(a => ({
+        name: a.name,
+        description: a.description,
+        required: a.required,
+        default: a.default,
+        value: current[a.name] ?? '',
+      }));
+      // Surface any stored args not (or no longer) declared so they aren't hidden.
+      for (const [k, v] of Object.entries(current)) {
+        if (!declared.some(a => a.name === k)) args.push({ name: k, description: '', required: false, default: '', value: v });
+      }
+      res.json({ args });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  app.put('/api/pipelines/:name/args', (req: Request, res: Response) => {
+    try {
+      const dir = path.join(PIPELINES_DIR, req.params.name);
+      if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Pipeline not found' });
+      const meta = readBenderJson(req.params.name) || { sidecars: [] } as BenderJson;
+      const values = (req.body.values && typeof req.body.values === 'object') ? req.body.values : {};
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(values as Record<string, unknown>)) {
+        // Valid env-var name + non-empty string value; empty drops the arg.
+        if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof v === 'string' && v) next[k] = v;
+      }
+      meta.args = next;
+      const filePath = path.join(dir, '.bender.json');
+      fs.writeFileSync(filePath, JSON.stringify(meta, null, 2));
+      try { fs.chownSync(filePath, 1000, 1000); } catch { /* best effort */ }
+      res.json({ status: 'saved', args: next });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

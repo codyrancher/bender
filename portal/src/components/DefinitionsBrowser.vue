@@ -3,11 +3,12 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/services/api'
 import DiffViewer from './DiffViewer.vue'
 import PipelineGraph from './PipelineGraph.vue'
+import Tabs from './Tabs.vue'
 import SkillDefinitionsPanel from './SkillDefinitionsPanel.vue'
 
 defineEmits<{ (e: 'close'): void }>()
 
-const activeTab = ref<'pipelines' | 'skills'>('pipelines')
+const activeTab = ref<string>('pipelines')
 
 interface DefSummary { id: string; name: string; stages: any[]; skills: string[] }
 interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }>; claudeMd: string }
@@ -41,7 +42,7 @@ const pdefError = ref('')
 
 // CLAUDE.md editor: the definition's CLAUDE.md is the agent's instructions at run
 // time (it replaces the template's). Edited independently of pipeline.md.
-const editorTab = ref<'pipeline' | 'claude'>('pipeline')
+const editorTab = ref<string>('pipeline')
 const editClaude = ref('')
 const claudeSaving = ref(false)
 const claudeError = ref('')
@@ -281,10 +282,10 @@ function jumpToStage(index: number) {
   <div class="defs-page">
     <div class="page-header">
       <h1>Definitions</h1>
-      <div class="def-tabs">
-        <button :class="{ active: activeTab === 'pipelines' }" @click="activeTab = 'pipelines'">Pipelines</button>
-        <button :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">Skills</button>
-      </div>
+      <Tabs
+        v-model="activeTab"
+        :tabs="[{ key: 'pipelines', label: 'Pipelines' }, { key: 'skills', label: 'Skills' }]"
+      />
     </div>
 
     <SkillDefinitionsPanel v-if="activeTab === 'skills'" />
@@ -338,15 +339,11 @@ function jumpToStage(index: number) {
           </div>
 
           <div class="defs-section">
-            <div class="defs-section-title">
-              <div class="defs-editor-tabs">
-                <button :class="{ active: editorTab === 'pipeline' }" @click="editorTab = 'pipeline'">
-                  pipeline.md<span v-if="dirty" class="defs-tab-dot">●</span>
-                </button>
-                <button :class="{ active: editorTab === 'claude' }" @click="editorTab = 'claude'">
-                  CLAUDE.md<span v-if="claudeDirty" class="defs-tab-dot">●</span>
-                </button>
-              </div>
+            <div class="defs-section-title defs-editor-head">
+              <Tabs
+                v-model="editorTab"
+                :tabs="[{ key: 'pipeline', label: 'pipeline.md', dirty }, { key: 'claude', label: 'CLAUDE.md', dirty: claudeDirty }]"
+              />
               <span v-if="editorTab === 'pipeline'" class="defs-hint">— edit the definition; validated on save</span>
               <span v-else class="defs-hint">— the agent's instructions at run time (replaces the template's)</span>
             </div>
@@ -488,29 +485,6 @@ function jumpToStage(index: number) {
   color: var(--color-text-primary);
   margin: 0;
 }
-
-.def-tabs {
-  display: flex;
-  border: 1px solid var(--color-border-medium);
-  border-radius: 7px;
-  overflow: hidden;
-}
-
-.def-tabs button {
-  padding: 6px 16px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.def-tabs button + button { border-left: 1px solid var(--color-border-medium); }
-.def-tabs button:hover { color: var(--color-text-primary); }
-.def-tabs button.active { background: var(--color-accent); color: var(--color-text-bright); }
 
 .back-btn {
   padding: 6px 12px;
@@ -672,33 +646,8 @@ function jumpToStage(index: number) {
 
 .defs-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--color-text-muted); opacity: 0.7; }
 
-/* pipeline.md / CLAUDE.md editor toggle */
-.defs-editor-tabs {
-  display: inline-flex;
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  overflow: hidden;
-  vertical-align: middle;
-  margin-right: 8px;
-}
-.defs-editor-tabs button {
-  padding: 4px 12px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.defs-editor-tabs button + button { border-left: 1px solid var(--color-border-medium); }
-.defs-editor-tabs button:hover { color: var(--color-text-primary); }
-.defs-editor-tabs button.active { background: var(--color-accent); color: var(--color-text-bright); }
-.defs-tab-dot { margin-left: 6px; color: var(--color-accent); }
-.defs-editor-tabs button.active .defs-tab-dot { color: var(--color-text-bright); }
+/* editor section header: tab strip + contextual hint on one line */
+.defs-editor-head { display: flex; align-items: center; gap: 10px; }
 
 /* clickable graph node */
 .defs-gnode {

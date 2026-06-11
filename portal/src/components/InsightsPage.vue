@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { marked } from 'marked'
 import { api } from '@/services/api'
+import Tabs from './Tabs.vue'
 
 const tables = ref<string[]>([])
 const selectedTable = ref<string | null>(null)
@@ -177,17 +178,13 @@ onMounted(() => {
 
       <!-- Table Browser -->
       <div class="table-section">
-        <div class="table-tabs">
-          <button
-            v-for="table in tables"
-            :key="table"
-            class="table-tab"
-            :class="{ active: selectedTable === table }"
-            @click="selectedTable = table"
-          >
-            {{ table }}
-          </button>
-        </div>
+        <Tabs
+          class="table-tabs"
+          variant="pills"
+          :model-value="selectedTable ?? ''"
+          :tabs="tables.map(t => ({ key: t, label: t }))"
+          @update:model-value="selectedTable = $event"
+        />
 
         <div v-if="selectedTable && columns.length" class="table-view">
           <div class="table-info">
@@ -381,31 +378,8 @@ onMounted(() => {
 
 .table-tabs {
   display: flex;
-  gap: var(--spacing-xs);
   flex-shrink: 0;
   margin-bottom: var(--spacing-sm);
-  flex-wrap: wrap;
-}
-
-.table-tab {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-md);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-family: inherit;
-}
-
-.table-tab:hover {
-  color: var(--color-text-hover);
-}
-
-.table-tab.active {
-  background: var(--color-bg-primary);
-  color: var(--color-accent);
-  border-color: var(--color-accent);
 }
 
 .table-view {

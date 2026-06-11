@@ -494,6 +494,18 @@ export const api = {
     })
   },
 
+  async getPipelineArgs(pipeline: string): Promise<{ args: Array<{ name: string; description: string; required: boolean; default: string; value: string }> }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/args`)
+  },
+
+  async savePipelineArgs(pipeline: string, values: Record<string, string>): Promise<{ status: string }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/args`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values }),
+    })
+  },
+
   async getSkill(pipeline: string, skill: string): Promise<{ content: string; exists: boolean }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/skills/${skill}`)
   },

@@ -69,6 +69,12 @@ async function confirmDelete() {
 }
 
 const mdEditor = ref<{ pipeline: string; content: string; claude: string } | null>(null)
+// Declared pipeline args + working/baseline values for the editor's "env args" tab.
+interface ArgDef { name: string; description: string; required: boolean; default: string; value: string }
+const editArgDefs = ref<ArgDef[]>([])
+const editArgValues = ref<Record<string, string>>({})
+const editArgOriginal = ref<Record<string, string>>({})
+const editArgsDirty = computed(() => JSON.stringify(editArgValues.value) !== JSON.stringify(editArgOriginal.value))
 const skillEditor = ref<{
   pipeline: string
   skill: string
@@ -282,10 +288,16 @@ function formatSize(bytes?: number): string {
 
 async function openMdEditor(pipeline: string) {
   try {
-    const [md, claude] = await Promise.all([
+    const [md, claude, args] = await Promise.all([
       api.getPipelineMd(pipeline),
       api.getPipelineClaudeMd(pipeline),
+      api.getPipelineArgs(pipeline),
     ])
+    editArgDefs.value = args.args
+    const vals: Record<string, string> = {}
+    for (const a of args.args) vals[a.name] = a.value
+    editArgValues.value = vals
+    editArgOriginal.value = { ...vals }
     mdEditor.value = { pipeline, content: md.content, claude: claude.content }
   } catch {}
 }
@@ -299,6 +311,12 @@ async function saveMd(content: string) {
 async function saveClaude(content: string) {
   if (!mdEditor.value) return
   await api.savePipelineClaudeMd(mdEditor.value.pipeline, content)
+}
+
+async function saveArgs() {
+  if (!mdEditor.value) return
+  await api.savePipelineArgs(mdEditor.value.pipeline, editArgValues.value)
+  editArgOriginal.value = { ...editArgValues.value }
 }
 
 async function rerunFromMd(value: string) {
@@ -1061,11 +1079,31 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
       :tabs="[
         { key: 'pipeline', label: 'pipeline.md', content: mdEditor.content, placeholder: '# Pipeline\n\n## Stages\n\n### 1. Stage Name\n**Skill:** skill-name\n**Success Criteria:** ...\nDescription', onSave: saveMd },
         { key: 'claude', label: 'CLAUDE.md', content: mdEditor.claude, placeholder: '# Project instructions for the agent at run time…', onSave: saveClaude },
+        { key: 'args', label: 'env args', custom: true, dirty: editArgsDirty, onSaveCustom: saveArgs },
       ]"
       :rerun-options="[{ label: 'Rerun pipeline', value: 'pipeline', hint: 'Start a fresh run with the new definition' }]"
       :on-rerun="rerunFromMd"
       @close="mdEditor = null"
-    />
+    >
+      <template #args>
+        <div class="args-tab">
+          <p v-if="!editArgDefs.length" class="args-empty">This pipeline declares no args.</p>
+          <div v-for="a in editArgDefs" :key="a.name" class="args-row">
+            <div class="args-label">
+              <span class="args-name">{{ a.name }}<span v-if="a.required" class="args-req">*</span></span>
+              <span v-if="a.description" class="args-desc">{{ a.description }}</span>
+            </div>
+            <input
+              v-model="editArgValues[a.name]"
+              class="args-input"
+              spellcheck="false"
+              :placeholder="a.default ? `default: ${a.default}` : ''"
+            />
+          </div>
+          <p class="args-note">Saved values are passed as environment variables to future runs of this pipeline.</p>
+        </div>
+      </template>
+    </EditorModal>
 
     <!-- skill editor -->
     <EditorModal
@@ -2405,5 +2443,70 @@ a.artifact-row:hover,
 .modal-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* env args tab (custom slot in EditorModal) */
+.args-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.args-empty {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.args-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.args-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.args-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+.args-req {
+  color: var(--color-error);
+  margin-left: 2px;
+}
+
+.args-desc {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.args-input {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.args-input:focus {
+  border-color: var(--color-accent);
+}
+
+.args-note {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 4px 0 0;
 }
 </style>

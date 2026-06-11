@@ -102,13 +102,13 @@ export function validatePipeline(pipelineMd: string, availableSkills: string[]):
   return errors;
 }
 
-interface PipelineArg { name: string; description: string; required: boolean; default: string }
+export interface PipelineArg { name: string; description: string; required: boolean; default: string }
 
 // Parse an optional "## Args" section declaring the inputs a pipeline accepts.
 // Each arg is a bullet: `- **NAME** (required): description. Default: \`value\``
 // (the "(required)" flag and "Default: ..." are optional). These become a simple
 // form at creation time and are passed into the pipeline container as env vars.
-function parseArgs(markdown: string): PipelineArg[] {
+export function parseArgs(markdown: string): PipelineArg[] {
   const lines = (markdown || '').split('\n');
   const args: PipelineArg[] = [];
   let inArgs = false;
