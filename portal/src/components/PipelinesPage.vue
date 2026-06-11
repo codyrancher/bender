@@ -90,10 +90,6 @@ async function loadDefinitions() {
 onMounted(async () => {
   await loadDefinitions()
 
-  for (const pl of pipelinesStore.pipelines) {
-    fetchRuns(pl.name)
-  }
-
   nowTimer = setInterval(() => { now.value = Date.now() }, 1000)
   // Poll runs for any pipeline with an in-flight run so stages/logs update live
   pollTimer = setInterval(() => {
@@ -107,6 +103,19 @@ onUnmounted(() => {
   if (nowTimer) clearInterval(nowTimer)
   if (pollTimer) clearInterval(pollTimer)
 })
+
+// Load the latest runs for each pipeline as the list loads, so the graph shows
+// stage state by default (without expanding run history). Robust to the pipeline
+// list arriving after mount.
+watch(
+  () => pipelinesStore.pipelines.map(p => p.name).join('\n'),
+  () => {
+    for (const pl of pipelinesStore.pipelines) {
+      if (!pipelineRuns.value[pl.name]) fetchRuns(pl.name)
+    }
+  },
+  { immediate: true },
+)
 
 async function fetchRuns(pipeline: string) {
   try {
@@ -172,7 +181,6 @@ async function handleCreate() {
 async function startRunDirect(pipeline: string) {
   await api.createPipelineRun(pipeline)
   await fetchRuns(pipeline)
-  expandedPipeline.value = pipeline
 }
 
 function isRunActive(pipeline: string): boolean {
@@ -203,7 +211,6 @@ async function toggleRun(pipeline: string, e: Event) {
 async function startRun(pipeline: string) {
   try {
     await api.createPipelineRun(pipeline)
-    expandedPipeline.value = pipeline
     await fetchRuns(pipeline)
   } catch {}
 }
