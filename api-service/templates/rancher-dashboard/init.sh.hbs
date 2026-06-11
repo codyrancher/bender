@@ -180,18 +180,11 @@ yarn lint
 HOOK
   chmod +x .git/hooks/pre-push
 
-  # Install dependencies (root + storybook in parallel). Track exit codes so
-  # the init log reflects the real outcome (yarn-on-wrong-node can silently
-  # leave node_modules empty, so "Dependencies installed" was misleading).
+  # Install dashboard dependencies. (yarn-on-wrong-node can silently leave
+  # node_modules empty, so check the exit code rather than assume success.)
   echo "Installing dependencies..."
-  yarn install &
-  YARN_PID=$!
-  (cd storybook && yarn install) &
-  STORYBOOK_PID=$!
-  wait $YARN_PID; YARN_STATUS=$?
-  wait $STORYBOOK_PID; STORYBOOK_STATUS=$?
-  if [ $YARN_STATUS -ne 0 ] || [ $STORYBOOK_STATUS -ne 0 ]; then
-    echo "Dependencies install FAILED (yarn=$YARN_STATUS storybook=$STORYBOOK_STATUS)"
+  if ! yarn install; then
+    echo "Dependencies install FAILED"
     echo "active node: $(node --version 2>/dev/null || echo 'none')"
     exit 1
   fi
@@ -202,14 +195,10 @@ else
   if [ ! -d /workspace/dashboard/node_modules ]; then
     echo "node_modules missing — re-running yarn install..."
     cd /workspace/dashboard
-    yarn install &
-    YARN_PID=$!
-    (cd storybook && yarn install) &
-    STORYBOOK_PID=$!
-    wait $YARN_PID; YARN_STATUS=$?
-    wait $STORYBOOK_PID; STORYBOOK_STATUS=$?
-    if [ $YARN_STATUS -ne 0 ] || [ $STORYBOOK_STATUS -ne 0 ]; then
-      echo "Dependencies install FAILED (yarn=$YARN_STATUS storybook=$STORYBOOK_STATUS)"
+    # A prior attempt failed; clear any half-written cache before retrying.
+    yarn cache clean >/dev/null 2>&1 || true
+    if ! yarn install; then
+      echo "Dependencies install FAILED"
       echo "active node: $(node --version 2>/dev/null || echo 'none')"
       exit 1
     fi

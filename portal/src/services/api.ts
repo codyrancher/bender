@@ -441,8 +441,12 @@ export const api = {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}`, { method: 'DELETE' })
   },
 
-  async rerunStage(pipeline: string, runId: number, stageIndex: number): Promise<{ run: PipelineRun }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/stages/${stageIndex}/rerun`, { method: 'POST' })
+  async rerunStage(pipeline: string, runId: number, stageIndex: number, opts?: { fromSnapshot?: boolean }): Promise<{ run: PipelineRun }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/stages/${stageIndex}/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromSnapshot: opts?.fromSnapshot ?? false }),
+    })
   },
 
   async cancelPipelineRun(pipeline: string, runId: number): Promise<{ run: PipelineRun }> {

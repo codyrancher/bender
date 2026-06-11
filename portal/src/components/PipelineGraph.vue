@@ -12,7 +12,7 @@ const props = defineProps<{
 }>()
 
 // Node + spacing geometry (px)
-const NODE_W = 168
+const NODE_W = 210
 const NODE_H = 56
 const COL_GAP = 54
 const ROW_GAP = 20

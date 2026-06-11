@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         make g++ python3 \
         git curl ca-certificates tmux gosu jq less zip \
-        ffmpeg v4l-utils \
+        ffmpeg v4l-utils rsync \
     && rm -rf /var/lib/apt/lists/*
 
 # The node:bookworm base image already ships a `node` user (uid/gid 1000).

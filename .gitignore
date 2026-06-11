@@ -5,6 +5,7 @@
 portal/node_modules/
 portal/dist/
 portal/*.tsbuildinfo
+portal/.certs/
 
 # API service build artifacts
 api-service/node_modules/

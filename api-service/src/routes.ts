@@ -18,6 +18,64 @@ const CLAUDE_CONFIG_DIR = '/claude-data';
 // (e.g. wait-for-sidecars waiting on a sidecar endpoint that never comes up)
 // fails with a clear message instead of hanging the whole pipeline forever.
 const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS) || 20 * 60 * 1000;
+
+// Best-effort browser-session recorder, written into the workspace and run via
+// `docker exec` alongside a stage. Connects to the live browser over CDP,
+// follows the active tab, and screencasts JPEG frames into an ffmpeg mp4 — so
+// the artifact shows exactly how the agent drove the browser. Self-deletes the
+// output if nothing was captured.
+const BROWSER_RECORDER_JS = `
+const { spawn } = require('child_process');
+const fs = require('fs');
+const OUT = process.argv[2];
+(async () => {
+  let chromium;
+  try { chromium = require('/workspace/node_modules/playwright-core').chromium; } catch (e) { process.exit(0); }
+  let browser;
+  try { browser = await chromium.connectOverCDP('http://localhost:9222'); } catch (e) { process.exit(0); }
+  const ff = spawn('ffmpeg', ['-y','-f','image2pipe','-use_wallclock_as_timestamps','1','-i','-',
+    '-vf','scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black',
+    '-pix_fmt','yuv420p','-r','10', OUT], { stdio: ['pipe','ignore','ignore'] });
+  ff.on('error', function(){});
+  let frames = 0, cur = null;
+  async function attach(page) {
+    try {
+      if (cur && cur.cdp) { try { await cur.cdp.send('Page.stopScreencast'); } catch(e){} try { await cur.cdp.detach(); } catch(e){} }
+      const cdp = await page.context().newCDPSession(page);
+      cdp.on('Page.screencastFrame', async function(f){
+        try { ff.stdin.write(Buffer.from(f.data, 'base64')); frames++; } catch(e){}
+        try { await cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }); } catch(e){}
+      });
+      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 50, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1 });
+      cur = { page: page, cdp: cdp };
+    } catch(e){}
+  }
+  function latest() {
+    const ctxs = browser.contexts();
+    for (let i = ctxs.length - 1; i >= 0; i--) {
+      const ps = ctxs[i].pages();
+      for (let j = ps.length - 1; j >= 0; j--) {
+        const u = ps[j].url() || '';
+        if (u.indexOf('about:blank') !== 0 && u.indexOf('devtools://') !== 0) return ps[j];
+      }
+    }
+    return ctxs[0] ? ctxs[0].pages()[0] : null;
+  }
+  const init = latest();
+  if (init) await attach(init);
+  for (const ctx of browser.contexts()) ctx.on('page', function(p){ attach(p); });
+  let finishing = false;
+  function finish() {
+    if (finishing) return; finishing = true;
+    try { ff.stdin.end(); } catch(e){}
+    const done = function(){ if (frames === 0) { try { fs.unlinkSync(OUT); } catch(e){} } process.exit(0); };
+    ff.on('close', done);
+    setTimeout(done, 5000);
+  }
+  process.on('SIGINT', finish);
+  process.on('SIGTERM', finish);
+})().catch(function(){ process.exit(0); });
+`;
 const BENDER_IMAGE = 'bender-claude';
 const NETWORK_NAME = 'bender_default';
 const DATA_DIR = '/data';
@@ -184,6 +242,52 @@ function pipelineArgEnvArgs(args: unknown): string[] {
     }
   }
   return out;
+}
+
+// ── Per-stage workspace snapshots (rsync, hardlink-deduped) ──────────────────
+// Snapshot the workspace at the start of each stage so a stage can be re-run
+// from its exact starting state, changing only the (edited) pipeline/skill
+// definition. node_modules is excluded (stable/regenerable); --link-dest
+// hardlinks unchanged files against the previous stage's snapshot so disk cost
+// is just the delta.
+const SNAPSHOT_STAGES = process.env.SNAPSHOT_STAGES !== '0';
+
+function snapshotDir(project: string, runId: number, stageIndex: number): string {
+  return path.join(PIPELINES_DIR, project, '.snapshots', `run-${runId}`, `stage-${stageIndex}`);
+}
+
+function snapshotWorkspace(project: string, runId: number, stageIndex: number): void {
+  if (!SNAPSHOT_STAGES) return;
+  const ws = path.join(PIPELINES_DIR, project);
+  if (!fs.existsSync(ws)) return;
+  const dest = snapshotDir(project, runId, stageIndex);
+  fs.mkdirSync(dest, { recursive: true });
+  const args = ['-a', '--delete', '--exclude=node_modules', '--exclude=.snapshots', '--exclude=.browser-recorder.mjs'];
+  // Hardlink unchanged files against the previous stage's snapshot (cheap).
+  const prev = snapshotDir(project, runId, stageIndex - 1);
+  if (stageIndex > 0 && fs.existsSync(prev)) args.push(`--link-dest=${prev}`);
+  args.push(ws + '/', dest + '/');
+  spawnSync('rsync', args, { stdio: 'ignore' });
+}
+
+function hasSnapshot(project: string, runId: number, stageIndex: number): boolean {
+  return fs.existsSync(snapshotDir(project, runId, stageIndex));
+}
+
+// Restore the workspace to a stage's snapshot, but keep the CURRENT pipeline.md
+// and skills (so the only delta from the original run is the edited definition).
+// node_modules and .snapshots are left untouched.
+function restoreWorkspace(project: string, runId: number, stageIndex: number): boolean {
+  const snap = snapshotDir(project, runId, stageIndex);
+  if (!fs.existsSync(snap)) return false;
+  const ws = path.join(PIPELINES_DIR, project);
+  const r = spawnSync('rsync', [
+    '-a', '--delete',
+    '--exclude=node_modules', '--exclude=.snapshots',
+    '--exclude=/pipeline.md', '--exclude=/.claude/skills',
+    snap + '/', ws + '/',
+  ], { stdio: 'ignore' });
+  return r.status === 0;
 }
 
 function readBenderJson(project: string): BenderJson | null {
@@ -1433,6 +1537,10 @@ export function registerRoutes(app: Express): void {
     // Make sure the pipeline container is up (no-op if already running).
     spawnSync('docker', ['start', container], { stdio: 'ignore' });
 
+    // Snapshot the workspace at the start of this stage so it can be re-run from
+    // exactly this state later (changing only the pipeline/skill definition).
+    try { snapshotWorkspace(pipeline, runId, idx); } catch { /* best effort */ }
+
     // Stage artifact drop inside the workspace (host path is the same dir via the
     // /workspace bind mount), cleared before the run.
     const wsArtifacts = `/workspace/.artifacts/stage-${idx}`;
@@ -1440,6 +1548,19 @@ export function registerRoutes(app: Express): void {
     fs.rmSync(hostArtifacts, { recursive: true, force: true });
     fs.mkdirSync(hostArtifacts, { recursive: true });
     try { chownRecursive(path.join(PIPELINES_DIR, pipeline, '.artifacts'), 1000, 1000); } catch { /* best effort */ }
+
+    // Best-effort: record the live browser session for this stage if the browser
+    // CDP endpoint is reachable and playwright-core is available in the workspace.
+    let recorder: ReturnType<typeof spawn> | null = null;
+    try {
+      const cdpUp = spawnSync('docker', ['exec', '-u', '1000:1000', container, 'bash', '-lc', 'curl -sf --max-time 3 http://localhost:9222/json/version >/dev/null'], { stdio: 'ignore' }).status === 0;
+      const pwOk = cdpUp && spawnSync('docker', ['exec', container, 'test', '-d', '/workspace/node_modules/playwright-core'], { stdio: 'ignore' }).status === 0;
+      if (pwOk) {
+        fs.writeFileSync(path.join(PIPELINES_DIR, pipeline, '.browser-recorder.mjs'), BROWSER_RECORDER_JS);
+        recorder = spawn('docker', ['exec', '-u', '1000:1000', container, 'bash', '-lc', `node /workspace/.browser-recorder.mjs ${wsArtifacts}/browser-session.mp4`], { stdio: 'ignore' });
+        logs += `\n[${ts()}] Recording browser session (debug)…`;
+      }
+    } catch { /* best effort — recording is optional */ }
 
     const prompt = buildStagePrompt(stage, wsArtifacts);
 
@@ -1500,6 +1621,16 @@ export function registerRoutes(app: Express): void {
       p.on('error', (e) => { logs += `\n[exec error] ${e.message}`; clearInterval(killTimer); resolve(1); });
       p.on('close', (code) => { if (buffer.trim()) handleLine(buffer); clearInterval(killTimer); resolve(code ?? 1); });
     });
+
+    // Stop the browser recorder (SIGINT → ffmpeg flush) and wait for it to
+    // finalize the mp4 before we collect artifacts from the same dir.
+    if (recorder) {
+      try { spawnSync('docker', ['exec', container, 'bash', '-lc', 'pkill -INT -f browser-recorder.mjs']); } catch { /* ignore */ }
+      await new Promise<void>((res) => {
+        const t = setTimeout(() => res(), 8000);
+        recorder!.on('close', () => { clearTimeout(t); res(); });
+      });
+    }
 
     if (ctrl.cancelled) return 'cancelled';
 
@@ -1953,18 +2084,60 @@ export function registerRoutes(app: Express): void {
       // Stop any in-flight execution of this run before resetting
       cancelActiveRunsForPipeline(pipeline);
 
+      // Optionally restore the workspace to this stage's start-of-run snapshot
+      // (keeping the current/edited pipeline.md + skills) for an exact re-run.
+      const fromSnapshot = req.body?.fromSnapshot === true;
+      let restored = false;
+      if (fromSnapshot) restored = restoreWorkspace(pipeline, runId, idx);
+
+      // Re-sync the reset stages from the CURRENT workspace definition so edits
+      // to pipeline.md / SKILL.md take effect on the re-run.
+      let parsed: PipelineStage[] = [];
+      try {
+        const md = fs.readFileSync(path.join(PIPELINES_DIR, pipeline, 'pipeline.md'), 'utf-8');
+        parsed = parsePipelineStages(md);
+      } catch { /* keep existing records if pipeline.md is unreadable */ }
+
       const reset = db.transaction(() => {
-        // Reset the target stage and all later stages back to pending
-        db.prepare(
-          `UPDATE pipeline_stage_records
-           SET status = 'pending', started_at = NULL, completed_at = NULL, duration_ms = NULL, error = NULL, success_criteria_met = 0, logs = NULL, artifacts = NULL
-           WHERE run_id = ? AND stage_index >= ?`
-        ).run(runId, idx);
+        const records = db.prepare(
+          'SELECT * FROM pipeline_stage_records WHERE run_id = ? AND stage_index >= ? ORDER BY stage_index'
+        ).all(runId, idx) as any[];
+        for (const rec of records) {
+          const ps = parsed[rec.stage_index];
+          const skillName = ps?.skill || rec.skill;
+          let skillMd = rec.skill_md;
+          try {
+            const sp = resolveSkillPath(pipeline, skillName);
+            if (sp && fs.existsSync(sp)) skillMd = fs.readFileSync(sp, 'utf-8');
+          } catch { /* keep existing */ }
+          db.prepare(
+            `UPDATE pipeline_stage_records
+             SET status = 'pending', started_at = NULL, completed_at = NULL, duration_ms = NULL, error = NULL,
+                 success_criteria_met = 0, logs = NULL, artifacts = NULL,
+                 success_criteria = ?, skill = ?, skill_md = ?, next_indices = ?
+             WHERE id = ?`
+          ).run(
+            ps?.successCriteria ?? rec.success_criteria,
+            skillName,
+            skillMd,
+            ps ? JSON.stringify(ps.next) : rec.next_indices,
+            rec.id,
+          );
+        }
         db.prepare(
           "UPDATE pipeline_runs SET status = 'running', completed_at = NULL WHERE id = ?"
         ).run(runId);
       });
       reset();
+
+      if (fromSnapshot && !restored) {
+        // Surface that there was no snapshot to restore (older run) — still reruns.
+        try {
+          const cur = db.prepare('SELECT logs FROM pipeline_stage_records WHERE run_id = ? AND stage_index = ?').get(runId, idx) as any;
+          db.prepare('UPDATE pipeline_stage_records SET logs = ? WHERE run_id = ? AND stage_index = ?')
+            .run(`[note] No saved snapshot for this stage — re-running without state restore.\n${cur?.logs || ''}`, runId, idx);
+        } catch { /* ignore */ }
+      }
 
       broadcast('pipeline-run-changed', { pipeline, runId });
       startExecution(runId, pipeline);

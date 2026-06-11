@@ -9,6 +9,7 @@ import FileViewer from './FileViewer.vue'
 import ViewportOverlay from './ViewportOverlay.vue'
 import Modal from './Modal.vue'
 import PipelineGraph from './PipelineGraph.vue'
+import { getBrowserUrl } from '@/services/urls'
 import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact, PipelineArg } from '@/types'
 
 const pipelinesStore = usePipelinesStore()
@@ -290,8 +291,8 @@ async function saveSkill(content: string) {
 async function rerunFromSkill(value: string) {
   const se = skillEditor.value
   if (!se) return
-  if (value === 'stage' && se.runId !== null) {
-    await api.rerunStage(se.pipeline, se.runId, se.stageIndex)
+  if ((value === 'stage' || value === 'stage-snapshot') && se.runId !== null) {
+    await api.rerunStage(se.pipeline, se.runId, se.stageIndex, { fromSnapshot: value === 'stage-snapshot' })
     await fetchRuns(se.pipeline)
   } else if (value === 'pipeline') {
     await startRunDirect(se.pipeline)
@@ -303,7 +304,8 @@ const skillRerunOptions = computed(() => {
   if (!se) return []
   const opts: Array<{ label: string; value: string; hint?: string }> = []
   if (se.runId !== null) {
-    opts.push({ label: 'Rerun this stage', value: 'stage', hint: 'Re-execute just this stage in its run' })
+    opts.push({ label: 'Rerun this stage from saved state', value: 'stage-snapshot', hint: "Restore the workspace to this stage's start, with your edited skill" })
+    opts.push({ label: 'Rerun this stage', value: 'stage', hint: 'Re-execute against the current workspace' })
   }
   opts.push({ label: 'Rerun pipeline', value: 'pipeline', hint: 'Start a fresh run from the beginning' })
   return opts
@@ -311,11 +313,28 @@ const skillRerunOptions = computed(() => {
 
 function selectStage(pipeline: string, stageIndex: number, runId: number | null) {
   selectedStage.value = { pipeline, stageIndex, runId }
+  showLiveBrowser.value = false
 }
 
 function closeStageModal() {
   selectedStage.value = null
+  showLiveBrowser.value = false
 }
+
+// Live browser view: the agent drives the project's browser sidecar over CDP,
+// and that same browser streams its screen (Selkies) — so embedding the stream
+// shows the agent clicking/typing/navigating in real time.
+const showLiveBrowser = ref(false)
+const liveBrowserUrl = computed(() => {
+  const name = stageDetail.value?.pipeline
+  if (!name) return ''
+  const port = pipelinesStore.getPipelineBrowserPort(name)
+  if (!port) return ''
+  return getBrowserUrl(name, port, pipelinesStore.getPipelineBrowserHost(name))
+})
+const canWatchLiveBrowser = computed(() =>
+  !!liveBrowserUrl.value && stageDetail.value?.record?.status === 'running',
+)
 
 const stageDetail = computed(() => {
   const sel = selectedStage.value
@@ -539,16 +558,13 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
                   <svg v-if="latestRunStages(pl.name)[index]?.status === 'running'" class="running-ring">
                     <rect />
                   </svg>
-                  <div class="stage-status-icon" :style="{ color: stageStatusColor(latestRunStages(pl.name)[index]?.status || 'pending') }">
-                    {{ stageStatusIcon(latestRunStages(pl.name)[index]?.status || 'pending') }}
+                  <div class="stage-elapsed" :style="{ color: stageStatusColor(latestRunStages(pl.name)[index]?.status || 'pending') }">
+                    {{ latestRunStages(pl.name)[index] ? liveStageDuration(latestRunStages(pl.name)[index]) : '—' }}
                   </div>
                   <div class="stage-info">
                     <span class="stage-name">{{ stage.name }}</span>
                     <span class="stage-meta">
                       <span class="stage-skill">{{ stage.skill }}</span>
-                      <span v-if="latestRunStages(pl.name)[index] && (latestRunStages(pl.name)[index].status === 'running' || latestRunStages(pl.name)[index].duration_ms)" class="stage-duration" :style="{ color: stageStatusColor(latestRunStages(pl.name)[index].status) }">
-                        {{ liveStageDuration(latestRunStages(pl.name)[index]) }}
-                      </span>
                     </span>
                   </div>
                   <div
@@ -704,6 +720,25 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
                   <span class="detail-status" :style="{ color: stageStatusColor(stageDetail.record.status) }">
                     {{ stageStatusIcon(stageDetail.record.status) }} {{ stageDetail.record.status }}
                   </span>
+                </div>
+              </div>
+
+              <div class="detail-section" v-if="canWatchLiveBrowser">
+                <div class="detail-label">Live Browser</div>
+                <button v-if="!showLiveBrowser" class="btn-live-browser" @click="showLiveBrowser = true">
+                  ▶ Watch the agent drive the browser
+                </button>
+                <div v-else class="live-browser">
+                  <div class="live-browser-bar">
+                    <span class="live-dot"></span> Live
+                    <a class="live-browser-open" :href="liveBrowserUrl" target="_blank" rel="noopener" title="Open in a new tab">↗</a>
+                    <button class="live-browser-hide" @click="showLiveBrowser = false">Hide</button>
+                  </div>
+                  <iframe
+                    :src="liveBrowserUrl"
+                    class="live-browser-frame"
+                    allow="autoplay; clipboard-read; clipboard-write"
+                  ></iframe>
                 </div>
               </div>
 
@@ -1363,16 +1398,14 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
   border-color: var(--color-error);
 }
 
-.stage-status-icon {
-  font-size: 14px;
-  font-weight: 700;
+.stage-elapsed {
   flex-shrink: 0;
-  width: 18px;
+  min-width: 46px;
   text-align: center;
-}
-
-.node-stage.running .stage-status-icon {
-  animation: pulse 1.5s ease-in-out infinite;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 @keyframes pulse {
@@ -1384,6 +1417,7 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
   min-width: 0;
 }
 
@@ -1728,6 +1762,72 @@ function latestRunStages(pipeline: string): PipelineStageRecord[] {
 .detail-status {
   font-weight: 600;
   text-transform: capitalize;
+}
+
+/* Live browser stream */
+.btn-live-browser {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-live-browser:hover { background: var(--color-accent); color: var(--color-text-bright); }
+
+.live-browser {
+  border: 1px solid var(--color-border-dark);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+.live-browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-dark);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-status-running);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.live-browser-open {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+.live-browser-open:hover { color: var(--color-accent); }
+.live-browser-hide {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.live-browser-hide:hover { color: var(--color-text-primary); }
+.live-browser-frame {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: none;
+  background: #000;
 }
 
 .detail-timing {
