@@ -17,7 +17,7 @@ const CLAUDE_CONFIG_DIR = '/claude-data';
 // Hard cap on a single stage's Claude run, so a stage blocked indefinitely
 // (e.g. wait-for-sidecars waiting on a sidecar endpoint that never comes up)
 // fails with a clear message instead of hanging the whole pipeline forever.
-const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS) || 20 * 60 * 1000;
+const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS) || 35 * 60 * 1000;
 
 // Best-effort browser-session recorder, written into the workspace and run via
 // `docker exec` alongside a stage. Connects to the live browser over CDP,
@@ -46,7 +46,7 @@ const OUT = process.argv[2];
         try { ff.stdin.write(Buffer.from(f.data, 'base64')); frames++; } catch(e){}
         try { await cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }); } catch(e){}
       });
-      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 50, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1 });
+      await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 35, maxWidth: 1280, maxHeight: 720, everyNthFrame: 3 });
       cur = { page: page, cdp: cdp };
     } catch(e){}
   }

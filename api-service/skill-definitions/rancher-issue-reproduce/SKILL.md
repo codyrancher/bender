@@ -14,3 +14,16 @@ Reproduce the reported bug against the live Rancher instance so it is observable
 5. Record expected-vs-actual in `/workspace/repro-notes.md`.
 
 Do **not** attempt a fix here. The only goal is a reliable, documented reproduction.
+
+## Be efficient — conclude as soon as the bug is captured
+
+This stage has a time budget. Once you have (a) the bug visibly reproduced and (b)
+`repro-notes.md` with the exact trigger steps, you are **done** — immediately print
+the `STAGE_RESULT:` line and stop.
+
+- One clear "before" artifact is enough (a single screenshot, or one short video if
+  the bug is behavioral). **Do not** keep taking extra/annotated screenshots, build
+  comparison images, or polish — that's gold-plating and risks the stage timing out
+  with no result recorded. The dedicated Record Screenshot / Record Video stages
+  produce the demonstration artifacts; here you only need proof + notes.
+- Don't restart sidecars or re-run long waits more than necessary.
