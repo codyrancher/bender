@@ -257,6 +257,9 @@ function close() {
 
 .editor-body {
   flex: 1;
+  /* Keep the body the same height across tabs (the textarea is 320px tall,
+     plus 16px top/bottom padding) so switching tabs doesn't resize the modal. */
+  min-height: 352px;
   overflow: hidden;
   padding: 16px 20px;
   display: flex;
