@@ -20,11 +20,14 @@ one is the most common way to waste a verification run, because your code change
   record or screenshot the after-fix state.
 
 Important details about the dev server:
-- It is NOT started automatically. Start it yourself, e.g. `cd /workspace/dashboard && yarn dev` (the `API`
-  env var is already exported to the stock Rancher backend, so auth and API calls proxy there).
-- `wait-for-sidecars` does NOT wait for it - it only checks CDP and the Rancher API. After starting `yarn dev`,
-  poll the dev server (`curl -sk https://localhost:8005`) until it serves the compiled app, then drive the
-  browser. The first compile takes a while.
+- It is **started automatically** by `init.sh` (`yarn dev`, background, logs at `/workspace/yarn-dev.log`), so the
+  expensive cold compile usually runs during the early stages. Edits are picked up by incremental HMR. **Don't
+  restart it** — a restart forces a slow cold rebuild. Check first: `curl -sk -o /dev/null -w '%{http_code}'
+  https://localhost:8005` (200 = up). Only start it yourself if it isn't running (`pgrep -f "yarn dev"`).
+  The `API` env var is already exported to the stock Rancher backend, so auth and API calls proxy there.
+- `wait-for-sidecars` does NOT wait for it - it only checks CDP and the Rancher API. Before driving the browser
+  against it, poll once (`until curl -sk -o /dev/null -w '%{http_code}' https://localhost:8005 | grep -q 200; do
+  sleep 3; done`) so HMR has finished recompiling your change.
 - Log in on the dev server with the same admin credentials above.
 
 Rule of thumb: reproduce + setup -> stock Rancher; verify the fix + after-fix media -> dev server (8005).
