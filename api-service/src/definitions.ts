@@ -3,6 +3,11 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { listSkillDefinitions, getSkillDefinition } from './skill-definitions';
+import { getTemplateClaudeMd } from './templates';
+
+// Template whose CLAUDE.md seeds a new definition's CLAUDE.md by default (every
+// pipeline gets this template's environment unless another is requested).
+const DEFAULT_CLAUDE_TEMPLATE = 'rancher-dashboard';
 
 // Git-backed global definitions repo. A "definition" is a folder bundling a
 // pipeline.md and the SKILL.md files it references, versioned together:
@@ -152,6 +157,9 @@ function ensureRepo(): void {
           const dir = path.join(DEFINITIONS_DIR, id);
           fs.mkdirSync(dir, { recursive: true });
           fs.copyFileSync(path.join(SEED_DIR, f), path.join(dir, 'pipeline.md'));
+          // Optional companion `<id>.CLAUDE.md` seeds the definition's CLAUDE.md.
+          const claudeSeed = path.join(SEED_DIR, `${id}.CLAUDE.md`);
+          if (fs.existsSync(claudeSeed)) fs.copyFileSync(claudeSeed, path.join(dir, 'CLAUDE.md'));
         }
       }
     } catch { /* ignore seeding errors */ }
@@ -206,7 +214,9 @@ export function getDefinition(id: string): any | null {
     name,
     content: fs.readFileSync(path.join(dir, 'skills', name, 'SKILL.md'), 'utf-8'),
   }));
-  return { id, name: titleize(id), content, stages: parseStages(content), skills, args: parseArgs(content) };
+  const claudePath = path.join(dir, 'CLAUDE.md');
+  const claudeMd = fs.existsSync(claudePath) ? fs.readFileSync(claudePath, 'utf-8') : '';
+  return { id, name: titleize(id), content, stages: parseStages(content), skills, claudeMd, args: parseArgs(content) };
 }
 
 // Write (create or overwrite) a definition and commit it.
@@ -214,6 +224,7 @@ export function writeDefinition(opts: {
   id: string;
   pipelineMd: string;
   skills?: Array<{ name: string; content: string }>;
+  claudeMd?: string;
   message?: string;
 }): { sha: string } {
   ensureRepo();
@@ -221,6 +232,15 @@ export function writeDefinition(opts: {
   const dir = path.join(DEFINITIONS_DIR, opts.id);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'pipeline.md'), opts.pipelineMd || '');
+
+  // CLAUDE.md is optional and edited independently of pipeline.md. Only touch it
+  // when a value is supplied so unrelated saves don't clobber it; an empty string
+  // means "remove it" (fall back to the template CLAUDE.md at run time).
+  if (typeof opts.claudeMd === 'string') {
+    const claudePath = path.join(dir, 'CLAUDE.md');
+    if (opts.claudeMd) fs.writeFileSync(claudePath, opts.claudeMd);
+    else fs.rmSync(claudePath, { force: true });
+  }
 
   // Replace bundled skills wholesale so removed skills don't linger
   const skillsDir = path.join(dir, 'skills');
@@ -316,10 +336,16 @@ export function registerDefinitionRoutes(app: Express): void {
       const id = (req.body.id || '').trim();
       if (!safeId(id)) return res.status(400).json({ error: 'Invalid id (alphanumeric, - and _)' });
       if (fs.existsSync(path.join(DEFINITIONS_DIR, id))) return res.status(409).json({ error: 'Definition already exists' });
+      // New definitions default their CLAUDE.md to the rancher-dashboard template's
+      // (the environment every pipeline gets) so it shows up editable from the start.
+      const claudeMd = typeof req.body.claudeMd === 'string'
+        ? req.body.claudeMd
+        : getTemplateClaudeMd(DEFAULT_CLAUDE_TEMPLATE);
       const { sha } = writeDefinition({
         id,
         pipelineMd: typeof req.body.pipelineMd === 'string' ? req.body.pipelineMd : `# ${titleize(id)}\n\n## Stages\n`,
         skills: Array.isArray(req.body.skills) ? req.body.skills : [],
+        claudeMd,
         message: `Create ${id}`,
       });
       res.json({ id, sha });
@@ -345,7 +371,9 @@ export function registerDefinitionRoutes(app: Express): void {
         if (errors.length) return res.status(400).json({ error: errors.join(' '), errors });
       }
 
-      const { sha } = writeDefinition({ id, pipelineMd, skills, message: req.body.message || `Update ${id}` });
+      // Only touch CLAUDE.md when the caller sends it (independent of pipeline.md).
+      const claudeMd = typeof req.body.claudeMd === 'string' ? req.body.claudeMd : undefined;
+      const { sha } = writeDefinition({ id, pipelineMd, skills, claudeMd, message: req.body.message || `Update ${id}` });
       res.json({ id, sha });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });

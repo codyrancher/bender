@@ -90,6 +90,24 @@ export function getBrowserPort(templateId: string): number | null {
   return config.port;
 }
 
+// Raw (unrendered) CLAUDE.md source for a template — the `.hbs` that scaffolding
+// renders into the workspace, falling back to a plain CLAUDE.md. Used to seed the
+// default CLAUDE.md of a new pipeline definition. Returns '' if the template has none.
+export function getTemplateClaudeMd(templateId: string): string {
+  const dir = path.join(TEMPLATES_DIR, templateId);
+  for (const name of ['CLAUDE.md.hbs', 'CLAUDE.md']) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) return fs.readFileSync(p, 'utf-8');
+  }
+  return '';
+}
+
+// Render a raw Handlebars string with the same vars used by scaffoldTemplate.
+// Used to materialize a definition's CLAUDE.md into the workspace at run time.
+export function renderString(content: string, vars: Record<string, string>): string {
+  return Handlebars.compile(content)(vars);
+}
+
 const ALPHA_LOWER = 'abcdefghijklmnopqrstuvwxyz';
 const ALPHA_UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DIGITS = '0123456789';

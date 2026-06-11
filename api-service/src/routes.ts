@@ -3,10 +3,10 @@ import { spawnSync, spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { TEMPLATE_IDS, getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, TemplateKeyDef, listTemplates, createTemplate, updateTemplateMeta, deleteTemplate, getTemplateIcon, setTemplateIcon, getTemplatePath } from './templates';
+import { TEMPLATE_IDS, getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, TemplateKeyDef, listTemplates, createTemplate, updateTemplateMeta, deleteTemplate, getTemplateIcon, setTemplateIcon, getTemplatePath, renderString } from './templates';
 import { extractPipelineFlags } from './pipelineFlags';
 import { broadcast } from './events';
-import { materializeInto as materializeDefinition, writeDefinition } from './definitions';
+import { materializeInto as materializeDefinition, writeDefinition, getDefinition } from './definitions';
 
 const PIPELINES_DIR = '/data/pipelines';
 const COMPOSE_PROJECT = 'bender';
@@ -756,6 +756,19 @@ export function registerRoutes(app: Express): void {
 
       if (template && getTemplateIds().includes(template)) {
         scaffoldTemplate(template, projectPath, vars);
+      }
+
+      // A pipeline definition can carry its own CLAUDE.md. When present it is the
+      // single source of truth at run time: render it with the same template vars
+      // and overwrite the one the template scaffolded, so only the pipeline's
+      // CLAUDE.md is in the workspace. Definitions without one keep the template's.
+      if (req.body.definitionId) {
+        const def = getDefinition(req.body.definitionId);
+        if (def?.claudeMd) {
+          const claudePath = path.join(projectPath, 'CLAUDE.md');
+          fs.writeFileSync(claudePath, renderString(def.claudeMd, vars));
+          fs.chownSync(claudePath, 1000, 1000);
+        }
       }
 
       const containerName = `${COMPOSE_PROJECT}-${projectName}-1`;

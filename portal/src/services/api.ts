@@ -180,7 +180,7 @@ export const api = {
     return fetchJSON(`${API_BASE}/definitions`)
   },
 
-  async getDefinition(id: string): Promise<{ id: string; name: string; content: string; stages: PipelineStage[]; skills: Array<{ name: string; content: string }>; args?: PipelineArg[] }> {
+  async getDefinition(id: string): Promise<{ id: string; name: string; content: string; stages: PipelineStage[]; skills: Array<{ name: string; content: string }>; claudeMd: string; args?: PipelineArg[] }> {
     return fetchJSON(`${API_BASE}/definitions/${id}`)
   },
 
@@ -194,7 +194,7 @@ export const api = {
 
   async updateDefinition(
     id: string,
-    updates: { pipelineMd?: string; skills?: Array<{ name: string; content: string }>; message?: string },
+    updates: { pipelineMd?: string; skills?: Array<{ name: string; content: string }>; claudeMd?: string; message?: string },
   ): Promise<{ id: string; sha: string }> {
     return fetchJSON(`${API_BASE}/definitions/${id}`, {
       method: 'PUT',

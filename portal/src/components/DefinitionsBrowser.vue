@@ -10,7 +10,7 @@ defineEmits<{ (e: 'close'): void }>()
 const activeTab = ref<'pipelines' | 'skills'>('pipelines')
 
 interface DefSummary { id: string; name: string; stages: any[]; skills: string[] }
-interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }> }
+interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }>; claudeMd: string }
 
 const definitions = ref<DefSummary[]>([])
 const selectedId = ref<string | null>(null)
@@ -39,6 +39,13 @@ const globalSkillIds = ref<string[]>([])
 const pdefSaving = ref(false)
 const pdefError = ref('')
 
+// CLAUDE.md editor: the definition's CLAUDE.md is the agent's instructions at run
+// time (it replaces the template's). Edited independently of pipeline.md.
+const editorTab = ref<'pipeline' | 'claude'>('pipeline')
+const editClaude = ref('')
+const claudeSaving = ref(false)
+const claudeError = ref('')
+
 onMounted(() => { load(); loadGlobalSkills() })
 
 async function loadGlobalSkills() {
@@ -64,7 +71,9 @@ async function select(id: string) {
     detail.value = d
     history.value = h.commits
     editMd.value = d.content
+    editClaude.value = d.claudeMd || ''
     pdefError.value = ''
+    claudeError.value = ''
   } catch {
     detail.value = null
     history.value = []
@@ -208,6 +217,7 @@ async function quickCreateMissingSkills() {
 }
 
 const dirty = computed(() => !!detail.value && editMd.value !== detail.value.content)
+const claudeDirty = computed(() => !!detail.value && editClaude.value !== (detail.value.claudeMd || ''))
 
 // Last graph that parsed & validated cleanly — what we keep rendering while the
 // user is mid-edit and the current text is temporarily invalid.
@@ -229,6 +239,21 @@ async function saveDefinitionMd() {
     pdefError.value = e instanceof Error ? e.message : 'Failed to save'
   } finally {
     pdefSaving.value = false
+  }
+}
+
+async function saveDefinitionClaude() {
+  if (!detail.value || claudeSaving.value || !claudeDirty.value) return
+  claudeSaving.value = true
+  claudeError.value = ''
+  try {
+    const id = detail.value.id
+    await api.updateDefinition(id, { claudeMd: editClaude.value, message: `Edit CLAUDE.md ${id}` })
+    await select(id)
+  } catch (e) {
+    claudeError.value = e instanceof Error ? e.message : 'Failed to save'
+  } finally {
+    claudeSaving.value = false
   }
 }
 
@@ -314,9 +339,41 @@ function jumpToStage(index: number) {
 
           <div class="defs-section">
             <div class="defs-section-title">
-              pipeline.md
-              <span class="defs-hint">— edit the definition; validated on save</span>
+              <div class="defs-editor-tabs">
+                <button :class="{ active: editorTab === 'pipeline' }" @click="editorTab = 'pipeline'">
+                  pipeline.md<span v-if="dirty" class="defs-tab-dot">●</span>
+                </button>
+                <button :class="{ active: editorTab === 'claude' }" @click="editorTab = 'claude'">
+                  CLAUDE.md<span v-if="claudeDirty" class="defs-tab-dot">●</span>
+                </button>
+              </div>
+              <span v-if="editorTab === 'pipeline'" class="defs-hint">— edit the definition; validated on save</span>
+              <span v-else class="defs-hint">— the agent's instructions at run time (replaces the template's)</span>
             </div>
+
+            <!-- CLAUDE.md editor -->
+            <div v-show="editorTab === 'claude'">
+              <textarea
+                v-model="editClaude"
+                class="pdef-textarea"
+                spellcheck="false"
+                placeholder="# Project instructions for the agent…"
+              ></textarea>
+              <div v-if="claudeError" class="pdef-save-error">{{ claudeError }}</div>
+              <div class="pdef-actions">
+                <span v-if="claudeDirty" class="pdef-dirty">● Unsaved changes</span>
+                <button
+                  class="pdef-save"
+                  :disabled="claudeSaving || !claudeDirty"
+                  @click="saveDefinitionClaude"
+                >
+                  {{ claudeSaving ? 'Saving…' : 'Save & commit' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- pipeline.md editor -->
+            <div v-show="editorTab === 'pipeline'">
             <textarea
               ref="mdTextarea"
               v-model="editMd"
@@ -359,6 +416,7 @@ function jumpToStage(index: number) {
               >
                 {{ pdefSaving ? 'Saving…' : 'Save & commit' }}
               </button>
+            </div>
             </div>
           </div>
 
@@ -613,6 +671,34 @@ function jumpToStage(index: number) {
 }
 
 .defs-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--color-text-muted); opacity: 0.7; }
+
+/* pipeline.md / CLAUDE.md editor toggle */
+.defs-editor-tabs {
+  display: inline-flex;
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+.defs-editor-tabs button {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.defs-editor-tabs button + button { border-left: 1px solid var(--color-border-medium); }
+.defs-editor-tabs button:hover { color: var(--color-text-primary); }
+.defs-editor-tabs button.active { background: var(--color-accent); color: var(--color-text-bright); }
+.defs-tab-dot { margin-left: 6px; color: var(--color-accent); }
+.defs-editor-tabs button.active .defs-tab-dot { color: var(--color-text-bright); }
 
 /* clickable graph node */
 .defs-gnode {
