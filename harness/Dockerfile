@@ -32,9 +32,6 @@ COPY api-service/ /app/api-service/
 # Copy unpacked browser extension so it can be served via /api/extension.zip
 COPY portal/extension/ /app/extension/
 
-# Copy tab auto-pin extension for the persistent browser sidecar
-COPY harness/tab-auto-pin/ /app/tab-auto-pin/
-
 # Copy Claude image build context for building inside container
 COPY Dockerfile /app/claude-image/Dockerfile
 COPY entrypoint.sh /app/claude-image/entrypoint.sh

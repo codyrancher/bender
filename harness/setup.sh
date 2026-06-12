@@ -190,10 +190,6 @@ HOOKC
         " && echo "v4l2 caps hook built" || echo "WARN: v4l2 caps hook build failed"
 fi
 
-# Always sync tab-groups extension into the persistent profile
-mkdir -p "$BROWSER_PROFILE/tab-auto-pin"
-cp -r /app/tab-auto-pin/. "$BROWSER_PROFILE/tab-auto-pin/"
-
 # Chrome managed policy: force-install Bitwarden from Chrome Web Store
 # linuxserver containers run scripts from /config/custom-cont-init.d/ on boot
 mkdir -p "$BROWSER_PROFILE/custom-cont-init.d"
@@ -214,10 +210,6 @@ cat > /etc/chromium/policies/managed/policies.json <<'JSON'
 }
 JSON
 rm -f /etc/chromium/policies/managed/extensions.json
-
-# Tab auto-pin extension
-mkdir -p /usr/share/chromium/extensions
-ln -sf /config/tab-auto-pin /usr/share/chromium/extensions/tab-auto-pin
 
 # Virtual microphone
 PULSE_DEFAULT=/etc/pulse/default.pa
@@ -407,7 +399,7 @@ if ! docker ps -q -f name=bender-browser | grep -q .; then
     echo "Persistent browser started"
 else
     echo "Persistent browser already running, syncing extensions..."
-    docker exec bender-browser chown -R 1000:1000 /config/tab-auto-pin /config/policies 2>/dev/null || true
+    docker exec bender-browser chown -R 1000:1000 /config/policies 2>/dev/null || true
 fi
 
 # Expose CDP port for API notification monitor (Chromium binds 9222 to localhost only)

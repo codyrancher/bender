@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Bender Helper",
-  "version": "1.7",
+  "version": "1.8",
   "description": "Isolates VS Code storage per project, syncs browser sessions to sidecar browsers, and proxies GitHub requests from project containers using the host browser session",
-  "permissions": ["cookies", "storage", "alarms", "tabs", "tabGroups"],
+  "permissions": ["cookies", "storage", "alarms"],
   "host_permissions": [
     "*://*.github.com/*",
     "*://*.githubusercontent.com/*",
@@ -36,11 +36,6 @@
       "js": ["cookie-bridge.js"],
       "run_at": "document_idle",
       "all_frames": false
-    },
-    {
-      "matches": ["<all_urls>"],
-      "js": ["tab-pins.js"],
-      "run_at": "document_start"
     }
   ]
 }
