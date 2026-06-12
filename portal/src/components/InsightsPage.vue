@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { marked } from 'marked'
 import { api } from '@/services/api'
-import Tabs from './Tabs.vue'
+import Tabs from './primitives/Tabs.vue'
 
 const tables = ref<string[]>([])
 const selectedTable = ref<string | null>(null)

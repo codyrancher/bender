@@ -2,10 +2,10 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
-import DiffViewer from './DiffViewer.vue'
+import DiffViewer from './primitives/DiffViewer.vue'
 import PipelineGraph from './PipelineGraph.vue'
-import Tabs from './Tabs.vue'
-import Modal from './Modal.vue'
+import Tabs from './primitives/Tabs.vue'
+import Modal from './primitives/Modal.vue'
 import SkillDefinitionsPanel from './SkillDefinitionsPanel.vue'
 
 defineEmits<{ (e: 'close'): void }>()

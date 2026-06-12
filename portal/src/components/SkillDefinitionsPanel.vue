@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
-import DiffViewer from './DiffViewer.vue'
+import DiffViewer from './primitives/DiffViewer.vue'
 
 interface SkillSummary { id: string; name: string; description: string; fileCount: number }
 interface SkillFile { path: string; content: string; binary: boolean }
