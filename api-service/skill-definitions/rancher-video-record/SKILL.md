@@ -26,21 +26,18 @@ across calls, so you can drive the UI one command at a time while iterating.
 
 ## Advanced recorder (banners, highlights, pause/resume)
 
-This skill bundles two helper scripts for richer demos than `record-script` produces:
+For richer demos than `record-script` produces, use the recorder bundled in the
+`rancher-browser-automate` library skill (`record-template.mjs` + `overlay.mjs`):
+on-screen URL bar, cursor dot, click ripples, keystroke badges, `highlight()`,
+`banner()`, `smoothMove()`, `smoothType()`, and a `recording` flag to pause
+capture during off-camera transitions.
 
-- `overlay.mjs` — the on-screen overlay engine (URL bar, cursor dot, click ripples,
-  keystroke badges, red highlight rectangles, narrative banners).
-- `record-template.mjs` — a self-contained recorder built on `overlay.mjs`. It uses
-  polled screenshots (survives SPA navs / backend restarts) and exposes `highlight()`,
-  `banner()`, `smoothMove()`, `smoothType()`, and a `recording` flag to pause capture
-  during off-camera transitions.
-
-Use it when you need labeled callouts or to record across a Rancher restart. Copy both
-next to your video and edit the "Recorded actions" section:
+Copy both next to your video and edit the "Recorded actions" section:
 
 ```bash
-cp .claude/skills/rancher-video-record/overlay.mjs        /workspace/videos/overlay.mjs
-cp .claude/skills/rancher-video-record/record-template.mjs /workspace/videos/record-demo.mjs
+A=.claude/skills/rancher-browser-automate
+cp $A/record-template.mjs /workspace/videos/record-demo.mjs
+cp $A/overlay.mjs         /workspace/videos/overlay.mjs
 # edit RANCHER, OUT, and the actions, then:
 node /workspace/videos/record-demo.mjs
 ```

@@ -57,6 +57,37 @@ await c.page.screenshot({ path: process.env.STAGE_ARTIFACTS + '/after.png', full
 await disconnect(c)
 ```
 
+## Recording (video demos)
+
+Two scripts live here for recording smooth browser videos (used by the demo
+stages):
+
+- `overlay.mjs` — the on-screen overlay engine: URL bar, cursor dot, click
+  ripples, keystroke badges, red highlight rectangles, narrative banners.
+- `record-template.mjs` — a self-contained recorder built on `overlay.mjs`. It
+  polls screenshots (survives SPA navs / backend restarts) and exposes
+  `highlight()`, `banner()`, `smoothMove()`, `smoothType()`, and a `recording`
+  flag to pause capture during off-camera transitions.
+
+Two ways to record:
+
+```bash
+# Simple: replay a Playwright repro script via browser.mjs (deferred capture).
+node /workspace/browser.mjs record-script /workspace/repro.mjs "$STAGE_ARTIFACTS/before-fix.webm"
+
+# Rich: copy the template + overlay next to your video and edit the actions.
+A=.claude/skills/rancher-browser-automate
+cp $A/record-template.mjs /workspace/videos/record-demo.mjs
+cp $A/overlay.mjs         /workspace/videos/overlay.mjs
+# edit RANCHER, OUT, and the "Recorded actions" section, then:
+node /workspace/videos/record-demo.mjs
+```
+
+Note on timing: the fixed pauses inside a recording (cursor settle, viewer
+beats) are **deliberate pacing**, not the flaky state-waits the golden rule
+forbids — keep those. The off-camera login/navigation should still wait on state
+(reuse `loginAsAdmin` / `waitForReady` from `./lib.mjs`).
+
 ## Conventions
 
 - **Base URL:** `$RANCHER_BASE` or `$DEV_SERVER` (default `https://localhost:8005`, the

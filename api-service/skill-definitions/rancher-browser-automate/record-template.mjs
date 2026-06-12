@@ -1,8 +1,8 @@
 // Recording template — copy to /workspace/videos/ and customise.
 //
 // Usage:
-//   cp .claude/skills/rancher-video-record/record-template.mjs videos/record-my-demo.mjs
-//   cp .claude/skills/rancher-video-record/overlay.mjs         videos/overlay.mjs
+//   cp .claude/skills/rancher-browser-automate/record-template.mjs videos/record-my-demo.mjs
+//   cp .claude/skills/rancher-browser-automate/overlay.mjs         videos/overlay.mjs
 //   # edit RANCHER, OUT, and the "Recorded actions" section
 //   node videos/record-my-demo.mjs
 
