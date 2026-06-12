@@ -32,12 +32,14 @@ Then record the after artifact in the **same context** as the before artifact, r
   ```
   If `repro.mjs` hard-codes the stock host, re-point its base URL at `https://localhost:8005` first.
 
-- **screenshot** — use the bundled helper, which logs in + waits for the SPA to hydrate **before** deep-linking (deep-linking a cold shell is what produces the fail-whale / 404 / "Reload" page). Pass the same dashboard path the before-fix step used (it's in `/workspace/repro-notes.md`):
+- **screenshot** — compose the reusable `rancher-browser-actions` (they log in, wait for the SPA to hydrate **before** deep-linking — deep-linking a cold shell is what produces the fail-whale / 404 / "Reload" page — and wait for the view to render with no fixed sleeps). Use the same dashboard path the before-fix step used (in `/workspace/repro-notes.md`), and pass a `ready-selector` that only appears once the target view is up:
   ```bash
-  node .claude/skills/rancher-demo-record/capture-after.mjs \
-    "<dashboard-path-from-repro-notes>" "$STAGE_ARTIFACTS/after-fix.png"
+  A=.claude/skills/rancher-browser-actions
+  node $A/login.mjs https://localhost:8005
+  node $A/goto.mjs "<dashboard-path-from-repro-notes>" "<ready-selector>"
+  node $A/screenshot.mjs "$STAGE_ARTIFACTS/after-fix.png" "<ready-selector>"
   ```
-  (Reads the admin password from `$RANCHER_ADMIN_PASS` / `$CATTLE_BOOTSTRAP_PASSWORD`. If unset, look it up in `CLAUDE.md` / `/workspace/.env` and `export RANCHER_ADMIN_PASS=…` before running.)
+  (Admin password comes from `$RANCHER_ADMIN_PASS` / `$CATTLE_BOOTSTRAP_PASSWORD`; if unset, look it up in `CLAUDE.md` / `/workspace/.env` and `export RANCHER_ADMIN_PASS=…` first. See `.claude/skills/rancher-browser-actions/SKILL.md` for `explorer.mjs` and the rest.)
 
 ## Rules that keep this fast and reliable
 

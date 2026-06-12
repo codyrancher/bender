@@ -314,6 +314,23 @@ export function materializeInto(id: string, workspaceDir: string): boolean {
     }
     written.add(name.toLowerCase());
   }
+  // Library skills (id prefixed `rancher-browser-`) hold reusable browser-action
+  // scripts that stage skills compose. They aren't pipeline stages, so pull them
+  // in unconditionally so they're always available in the workspace.
+  try {
+    for (const lib of listSkillDefinitions() as Array<{ id: string }>) {
+      if (!/^rancher-browser-/.test(lib.id) || written.has(lib.id.toLowerCase())) continue;
+      const skill = getSkillDefinition(lib.id);
+      if (!skill) continue;
+      for (const f of skill.files as Array<{ path: string; content: string; binary: boolean }>) {
+        if (f.binary) continue;
+        const dest = path.join(workspaceDir, '.claude', 'skills', lib.id, f.path);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, f.content);
+      }
+      written.add(lib.id.toLowerCase());
+    }
+  } catch { /* library materialization is best-effort */ }
   return true;
 }
 
