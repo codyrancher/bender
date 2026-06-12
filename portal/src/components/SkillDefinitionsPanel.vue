@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import DiffViewer from './DiffViewer.vue'
 
@@ -18,6 +19,14 @@ const editFiles = ref<SkillFile[]>([])
 const selectedFile = ref<string>('SKILL.md')
 const saving = ref(false)
 const error = ref('')
+
+const route = useRoute()
+const router = useRouter()
+// Build the URL for a skill (+ optional file) so refresh/back keep the selection.
+function skillUrl(id: string, file?: string): string {
+  const base = `/definitions/skills/${id}`
+  return file && file !== 'SKILL.md' ? `${base}/${encodeURIComponent(file)}` : base
+}
 
 const creating = ref(false)
 const newId = ref('')
@@ -63,7 +72,10 @@ async function select(id: string) {
     detail.value = d
     history.value = h.commits
     editFiles.value = d.files.map(f => ({ ...f }))
-    selectedFile.value = d.files.find(f => f.path === 'SKILL.md')?.path || d.files[0]?.path || 'SKILL.md'
+    // Honor the file in the URL if it exists; otherwise default to SKILL.md.
+    const wanted = (route.params.file as string) || ''
+    selectedFile.value = (wanted && d.files.some(f => f.path === wanted) ? wanted : null)
+      || d.files.find(f => f.path === 'SKILL.md')?.path || d.files[0]?.path || 'SKILL.md'
   } catch {
     detail.value = null
     history.value = []
@@ -72,6 +84,15 @@ async function select(id: string) {
     loading.value = false
   }
 }
+
+// route → selected skill + file (keeps refresh/back on the same file)
+watch(() => [route.params.id, route.params.file] as const, async ([id, file]) => {
+  if (route.params.tab !== 'skills') return
+  const sid = id as string
+  if (sid && sid !== selectedId.value) await select(sid)
+  const f = (file as string) || ''
+  if (f && editFiles.value.some(x => x.path === f)) selectedFile.value = f
+}, { immediate: true })
 
 function updateActiveContent(value: string) {
   const f = editFiles.value.find(x => x.path === selectedFile.value)
@@ -86,12 +107,11 @@ function startAddFile() {
 function confirmAddFile() {
   const p = newFilePath.value.trim()
   if (!p) return
-  if (editFiles.value.some(f => f.path === p)) {
-    selectedFile.value = p
-  } else {
+  if (!editFiles.value.some(f => f.path === p)) {
     editFiles.value.push({ path: p, content: '', binary: false })
-    selectedFile.value = p
   }
+  selectedFile.value = p
+  if (selectedId.value) router.push(skillUrl(selectedId.value, p))
   addingFile.value = false
   newFilePath.value = ''
 }
@@ -99,7 +119,10 @@ function confirmAddFile() {
 function removeFile(path: string) {
   if (path === 'SKILL.md') return
   editFiles.value = editFiles.value.filter(f => f.path !== path)
-  if (selectedFile.value === path) selectedFile.value = 'SKILL.md'
+  if (selectedFile.value === path) {
+    selectedFile.value = 'SKILL.md'
+    if (selectedId.value) router.push(skillUrl(selectedId.value))
+  }
 }
 
 async function save() {
@@ -129,7 +152,7 @@ async function createSkill() {
     await api.createSkillDefinition(id)
     newId.value = ''
     await load()
-    await select(id)
+    router.push(skillUrl(id))
   } catch {
   } finally {
     creating.value = false
@@ -165,7 +188,7 @@ function shortDate(iso: string): string {
         :key="s.id"
         class="skills-item"
         :class="{ active: selectedId === s.id }"
-        @click="select(s.id)"
+        @click="router.push(skillUrl(s.id))"
       >
         <span class="skills-item-name">{{ s.name }}</span>
         <span class="skills-item-meta">{{ s.id }} · {{ s.fileCount }} file{{ s.fileCount === 1 ? '' : 's' }}</span>
@@ -198,7 +221,7 @@ function shortDate(iso: string): string {
               :key="f.path"
               class="skill-file"
               :class="{ active: selectedFile === f.path }"
-              @click="selectedFile = f.path"
+              @click="selectedId && router.push(skillUrl(selectedId, f.path))"
             >
               <span class="skill-file-name">{{ f.path }}</span>
               <span

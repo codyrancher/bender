@@ -57,7 +57,13 @@ const router = createRouter({
       component: EmptyComponent,
     },
     {
-      path: '/definitions',
+      // Sub-state in the path so a refresh stays on the same tab/skill/file:
+      //   /definitions                  → default (pipelines)
+      //   /definitions/skills           → skills tab
+      //   /definitions/skills/:id       → a skill selected
+      //   /definitions/skills/:id/:file → a file within the skill
+      //   /definitions/pipelines/:id    → a pipeline definition selected
+      path: '/definitions/:tab(pipelines|skills)?/:id?/:file?',
       name: 'definitions',
       component: EmptyComponent,
     },

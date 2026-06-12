@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import DiffViewer from './DiffViewer.vue'
 import PipelineGraph from './PipelineGraph.vue'
@@ -8,7 +9,11 @@ import SkillDefinitionsPanel from './SkillDefinitionsPanel.vue'
 
 defineEmits<{ (e: 'close'): void }>()
 
-const activeTab = ref<string>('pipelines')
+const route = useRoute()
+const router = useRouter()
+
+// The active tab lives in the URL (/definitions/:tab) so a refresh stays put.
+const activeTab = ref<string>((route.params.tab as string) || 'pipelines')
 
 interface DefSummary { id: string; name: string; stages: any[]; skills: string[] }
 interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }>; claudeMd: string }
@@ -82,6 +87,25 @@ async function select(id: string) {
     loading.value = false
   }
 }
+
+// ── URL ↔ selection sync (so a refresh stays on the same tab/definition) ──
+// route → tab
+watch(() => route.params.tab, (t) => {
+  const tab = (t as string) || 'pipelines'
+  if (tab !== activeTab.value) activeTab.value = tab
+})
+// tab → route (preserve the selected pipeline id when on the pipelines tab)
+watch(activeTab, (tab) => {
+  const cur = (route.params.tab as string) || 'pipelines'
+  if (tab === cur) return
+  if (tab === 'pipelines') router.push(`/definitions/pipelines${selectedId.value ? '/' + selectedId.value : ''}`)
+  else router.push('/definitions/skills')
+})
+// route → selected pipeline definition (only meaningful on the pipelines tab)
+watch(() => [activeTab.value, route.params.id] as const, ([tab, id]) => {
+  const rid = id as string
+  if (tab === 'pipelines' && rid && rid !== selectedId.value) select(rid)
+}, { immediate: true })
 
 function openDiffAt(index: number) {
   diffInitial.value = index
@@ -299,7 +323,7 @@ function jumpToStage(index: number) {
           :key="d.id"
           class="defs-item"
           :class="{ active: selectedId === d.id }"
-          @click="select(d.id)"
+          @click="router.push('/definitions/pipelines/' + d.id)"
         >
           <span class="defs-item-name">{{ d.name }}</span>
           <span class="defs-item-meta">{{ d.stages.length }} stages · {{ d.skills.length }} skills</span>
