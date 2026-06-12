@@ -3,7 +3,7 @@ import { computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { getPipelineIdFromRoute, isHarnessRoute, isTemplateEditorRoute } from '@/router'
+import { getPipelineIdFromRoute, isHarnessRoute } from '@/router'
 import TabBar from '@/components/TabBar.vue'
 import Toolbar from '@/components/Toolbar.vue'
 import IFrameContainer from '@/components/IFrameContainer.vue'
@@ -14,7 +14,6 @@ import NewPipelineModal from '@/components/NewPipelineModal.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
 import InsightsPage from '@/components/InsightsPage.vue'
 import TerminalDrawer from '@/components/TerminalDrawer.vue'
-import TemplateEditorToolbar from '@/components/TemplateEditorToolbar.vue'
 import PipelinesPage from '@/components/PipelinesPage.vue'
 import DefinitionsBrowser from '@/components/DefinitionsBrowser.vue'
 
@@ -25,7 +24,6 @@ const uiStore = useUiStore()
 
 const isHome = computed(() => route.name === 'home')
 const isSettings = computed(() => route.name === 'settings')
-const isTemplateEditor = computed(() => isTemplateEditorRoute(route))
 const isInsights = computed(() => route.name === 'insights')
 const isDefinitions = computed(() => route.name === 'definitions')
 
@@ -49,7 +47,7 @@ onMounted(async () => {
     uiStore.hideLoading()
   } else if (pipelineId) {
     await pipelinesStore.loadPipeline(pipelineId)
-  } else if (route.name === 'settings' || route.name === 'template-editor' || route.name === 'insights' || route.name === 'definitions') {
+  } else if (route.name === 'settings' || route.name === 'insights' || route.name === 'definitions') {
     uiStore.hideLoading()
   } else {
     uiStore.hideLoading()
@@ -61,8 +59,7 @@ onMounted(async () => {
   <div class="main-content">
     <PipelinesPage v-if="isHome" />
     <div v-show="!isHome && !isSettings && !isInsights && !isDefinitions" class="iframe-pane">
-      <TemplateEditorToolbar v-if="isTemplateEditor" />
-      <Toolbar v-else />
+      <Toolbar />
       <IFrameContainer />
     </div>
     <SettingsPage v-if="isSettings" />

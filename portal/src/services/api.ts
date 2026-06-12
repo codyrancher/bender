@@ -346,15 +346,6 @@ export const api = {
     })
   },
 
-  // Template editor (code-server) lifecycle — used by the template-editor route.
-  async startTemplateEditor(id: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/templates/${id}/editor`, { method: 'POST' })
-  },
-
-  async stopTemplateEditor(id: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/templates/${id}/editor`, { method: 'DELETE' })
-  },
-
   async uploadImage(pipeline: string, base64Data: string, filename: string): Promise<UploadResponse> {
     return fetchJSON(`${API_BASE}/upload/${pipeline}`, {
       method: 'POST',

@@ -3,7 +3,7 @@ import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute, isTemplateEditorRoute, getTemplateIdFromRoute } from '@/router'
+import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute } from '@/router'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 
 const route = useRoute()
@@ -14,8 +14,6 @@ const uiStore = useUiStore()
 const pipelineId = computed(() => getPipelineIdFromRoute(route))
 const viewMode = computed(() => getViewModeFromRoute(route))
 const isHarness = computed(() => isHarnessRoute(route))
-const isTemplateEditor = computed(() => isTemplateEditorRoute(route))
-const templateId = computed(() => getTemplateIdFromRoute(route))
 const harnessDevRunning = computed(() => pipelinesStore.harnessStatus.devRunning)
 const harnessOperationActive = computed(() => pipelinesStore.harnessOperationActive)
 const harnessLogs = computed(() => pipelinesStore.harnessLogs)
@@ -23,34 +21,6 @@ const harnessVscodeUrl = getVscodeUrl('bender-dev')
 const harnessVscodeReady = ref(false)
 const harnessVscodeLoaded = ref(false)
 const logsContainer = ref<HTMLElement | null>(null)
-
-// Template editor state
-const templateEditorReady = ref<Record<string, boolean>>({})
-const templateEditorLoaded = ref<Record<string, boolean>>({})
-let templateEditorPollTimer: ReturnType<typeof setTimeout> | null = null
-
-function getTemplateEditorUrl(tplId: string): string {
-  return getVscodeUrl(`tpl-${tplId}`)
-}
-
-watch(templateId, (id, oldId) => {
-  if (id && !templateEditorReady.value[id]) {
-    pollTemplateEditor(id)
-  }
-  if (oldId && templateEditorPollTimer) {
-    clearTimeout(templateEditorPollTimer)
-    templateEditorPollTimer = null
-  }
-}, { immediate: true })
-
-async function pollTemplateEditor(id: string) {
-  if (templateEditorReady.value[id]) return
-  if (await pollUrl(getTemplateEditorUrl(id))) {
-    templateEditorReady.value[id] = true
-  } else {
-    templateEditorPollTimer = setTimeout(() => pollTemplateEditor(id), 2000)
-  }
-}
 
 // Auto-scroll logs to bottom
 watch(harnessLogs, () => {
@@ -155,7 +125,6 @@ watch(
 onUnmounted(() => {
   for (const timer of pollingTimers.values()) clearTimeout(timer)
   pollingTimers.clear()
-  if (templateEditorPollTimer) clearTimeout(templateEditorPollTimer)
   window.removeEventListener('message', handleVscodeOpenUrl)
 })
 
@@ -262,17 +231,6 @@ window.addEventListener('message', handleVscodeOpenUrl)
       @load="harnessVscodeLoaded = true"
     ></iframe>
 
-    <!-- Template editor iframes -->
-    <template v-for="(ready, tplId) in templateEditorReady" :key="'tpl-' + tplId">
-      <iframe
-        v-if="ready"
-        :src="getTemplateEditorUrl(String(tplId))"
-        :class="{ active: isTemplateEditor && templateId === tplId }"
-        allow="clipboard-read; clipboard-write; cross-origin-isolated"
-        @load="templateEditorLoaded[String(tplId)] = true"
-      ></iframe>
-    </template>
-
     <!-- Persistent pipeline iframes - stay mounted for all loaded+running pipelines -->
     <template v-for="pl in pipelinesStore.pipelines" :key="pl.name">
       <iframe
@@ -292,18 +250,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
     </template>
 
     <!-- Overlays - rendered on top based on current view state -->
-    <template v-if="isTemplateEditor && templateId">
-      <div v-if="!templateEditorLoaded[templateId]" class="loading-overlay">
-        <div class="status-container">
-          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-          </svg>
-          <span>Loading VS Code...</span>
-        </div>
-      </div>
-    </template>
-
-    <template v-else-if="isHarness">
+    <template v-if="isHarness">
       <div v-if="harnessOperationActive" class="loading-overlay">
         <div class="harness-logs-container">
           <div class="status-container">

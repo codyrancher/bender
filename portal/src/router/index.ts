@@ -46,12 +46,6 @@ const router = createRouter({
       component: EmptyComponent,
     },
     {
-      path: '/settings/template/:templateId',
-      name: 'template-editor',
-      component: EmptyComponent,
-      meta: { view: 'vscode' as ViewMode },
-    },
-    {
       path: '/insights',
       name: 'insights',
       component: EmptyComponent,
@@ -85,14 +79,6 @@ export function getViewModeFromRoute(route: RouteLocationNormalized): ViewMode {
 
 export function isHarnessRoute(route: RouteLocationNormalized): boolean {
   return route.meta.harness === true
-}
-
-export function isTemplateEditorRoute(route: RouteLocationNormalized): boolean {
-  return route.name === 'template-editor'
-}
-
-export function getTemplateIdFromRoute(route: RouteLocationNormalized): string | null {
-  return (route.params.templateId as string) || null
 }
 
 export default router

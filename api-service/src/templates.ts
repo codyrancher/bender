@@ -8,8 +8,6 @@ const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
 export function getTemplateIds(): string[] {
   return getAvailableTemplates();
 }
-// Keep TEMPLATE_IDS for backwards compat but make it a getter
-export const TEMPLATE_IDS = getAvailableTemplates();
 
 export interface TemplateInfo {
   id: string;
@@ -254,81 +252,4 @@ function countTemplateFiles(templateDir: string): string[] {
   }
   walk(templateDir, '');
   return files;
-}
-
-export function listTemplates(): TemplateInfo[] {
-  if (!fs.existsSync(TEMPLATES_DIR)) return [];
-  return fs.readdirSync(TEMPLATES_DIR, { withFileTypes: true })
-    .filter(e => e.isDirectory())
-    .map(e => {
-      const id = e.name;
-      const dir = path.join(TEMPLATES_DIR, id);
-      const meta = getTemplateMeta(id);
-      const iconPath = path.join(dir, 'icon.svg');
-      return {
-        id,
-        name: meta?.name || id,
-        description: meta?.description || '',
-        hasIcon: fs.existsSync(iconPath),
-        files: countTemplateFiles(dir),
-        path: dir,
-        keys: meta?.keys,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function createTemplate(id: string, name: string, description: string): TemplateInfo {
-  const dir = path.join(TEMPLATES_DIR, id);
-  if (fs.existsSync(dir)) {
-    throw new Error(`Template "${id}" already exists`);
-  }
-  fs.mkdirSync(dir, { recursive: true });
-  const meta = { name, description };
-  fs.writeFileSync(path.join(dir, 'template.json'), JSON.stringify(meta, null, 2));
-  return {
-    id,
-    name,
-    description,
-    hasIcon: false,
-    files: [],
-    path: dir,
-  };
-}
-
-export function updateTemplateMeta(id: string, name: string, description: string): void {
-  const metaPath = path.join(TEMPLATES_DIR, id, 'template.json');
-  let existing: Record<string, unknown> = {};
-  if (fs.existsSync(metaPath)) {
-    existing = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-  }
-  existing.name = name;
-  existing.description = description;
-  fs.writeFileSync(metaPath, JSON.stringify(existing, null, 2));
-}
-
-export function deleteTemplate(id: string): void {
-  const dir = path.join(TEMPLATES_DIR, id);
-  if (!fs.existsSync(dir)) {
-    throw new Error(`Template "${id}" not found`);
-  }
-  fs.rmSync(dir, { recursive: true, force: true });
-}
-
-export function getTemplateIcon(id: string): string | null {
-  const iconPath = path.join(TEMPLATES_DIR, id, 'icon.svg');
-  if (!fs.existsSync(iconPath)) return null;
-  return fs.readFileSync(iconPath, 'utf-8');
-}
-
-export function setTemplateIcon(id: string, svg: string): void {
-  const dir = path.join(TEMPLATES_DIR, id);
-  if (!fs.existsSync(dir)) {
-    throw new Error(`Template "${id}" not found`);
-  }
-  fs.writeFileSync(path.join(dir, 'icon.svg'), svg);
-}
-
-export function getTemplatePath(id: string): string {
-  return path.join(TEMPLATES_DIR, id);
 }
