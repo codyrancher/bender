@@ -6,6 +6,9 @@ import DiffViewer from './primitives/DiffViewer.vue'
 import PipelineGraph from './PipelineGraph.vue'
 import Tabs from './primitives/Tabs.vue'
 import Modal from './primitives/Modal.vue'
+import Button from './primitives/Button.vue'
+import FormField from './primitives/FormField.vue'
+import StatePanel from './primitives/StatePanel.vue'
 import SkillDefinitionsPanel from './SkillDefinitionsPanel.vue'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -378,7 +381,7 @@ function jumpToStage(index: number) {
 
       <!-- right: detail -->
       <div class="defs-detail">
-        <div v-if="loading" class="defs-state">Loading…</div>
+        <StatePanel v-if="loading" spinner>Loading…</StatePanel>
         <template v-else-if="detail">
           <div class="defs-detail-head">
             <div>
@@ -508,7 +511,7 @@ function jumpToStage(index: number) {
             </div>
           </div>
         </template>
-        <div v-else class="defs-state">Select a definition</div>
+        <StatePanel v-else>Select a definition</StatePanel>
       </div>
     </div>
   </div>
@@ -530,33 +533,30 @@ function jumpToStage(index: number) {
     <div class="imp-pad">
       <p v-if="!importModal.instances.length && !importModal.error" class="imp-empty">No pipelines available to import from.</p>
       <template v-else>
-        <div class="imp-group">
-          <label>Pipeline</label>
+        <FormField label="Pipeline">
           <select v-model="importModal.pipeline" @change="onPickImportPipeline">
             <option v-for="i in importModal.instances" :key="i" :value="i">{{ i }}</option>
           </select>
-        </div>
-        <div class="imp-group">
-          <label>Definition id</label>
+        </FormField>
+        <FormField label="Definition id">
           <input v-model="importModal.definitionId" type="text" placeholder="my-definition" spellcheck="false" />
-        </div>
-        <div class="imp-group">
-          <label>Commit message</label>
+        </FormField>
+        <FormField label="Commit message">
           <input v-model="importModal.message" type="text" @keydown.enter="confirmImport" />
-        </div>
+        </FormField>
       </template>
       <div v-if="importModal.error" class="imp-error">{{ importModal.error }}</div>
     </div>
     <template #footer>
-      <button class="modal-btn cancel" :disabled="importModal.saving" @click="importModal = null">Cancel</button>
-      <button
+      <Button variant="secondary" :disabled="importModal.saving" @click="importModal = null">Cancel</Button>
+      <Button
         v-if="importModal.instances.length"
-        class="modal-btn create"
+        variant="primary"
         :disabled="importModal.saving || !importModal.definitionId.trim()"
         @click="confirmImport"
       >
         {{ importModal.saving ? 'Importing…' : 'Import' }}
-      </button>
+      </Button>
     </template>
   </Modal>
 </template>
@@ -699,9 +699,7 @@ function jumpToStage(index: number) {
 /* import-from-pipeline modal content */
 .imp-pad { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .imp-empty { font-size: 13px; color: var(--color-text-muted); margin: 0; }
-.imp-group { display: flex; flex-direction: column; gap: 6px; }
-.imp-group label { font-size: 12px; font-weight: 600; color: var(--color-text-muted); }
-.imp-group input, .imp-group select {
+.imp-pad input, .imp-pad select {
   padding: 8px 11px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-medium);
@@ -711,7 +709,7 @@ function jumpToStage(index: number) {
   font-family: inherit;
   outline: none;
 }
-.imp-group input:focus, .imp-group select:focus { border-color: var(--color-accent); }
+.imp-pad input:focus, .imp-pad select:focus { border-color: var(--color-accent); }
 .imp-error { padding: 8px 12px; color: var(--color-error); font-size: 12px; background: rgba(232, 88, 88, 0.08); border-radius: 6px; }
 
 .defs-detail {
@@ -1054,19 +1052,4 @@ function jumpToStage(index: number) {
   flex-shrink: 0;
 }
 
-.modal-btn {
-  padding: 8px 18px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 500;
-  transition: background 0.15s, opacity 0.15s;
-}
-.modal-btn.cancel { background: var(--color-bg-element); color: var(--color-text-muted); }
-.modal-btn.cancel:hover { background: var(--color-bg-element-hover); color: var(--color-text-hover); }
-.modal-btn.create { background: var(--color-accent); color: var(--color-text-bright); }
-.modal-btn.create:hover { background: var(--color-accent-hover); }
-.modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

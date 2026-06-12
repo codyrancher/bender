@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import DiffViewer from './primitives/DiffViewer.vue'
+import StatePanel from './primitives/StatePanel.vue'
 
 interface SkillSummary { id: string; name: string; description: string; fileCount: number }
 interface SkillFile { path: string; content: string; binary: boolean }
@@ -201,7 +202,7 @@ function shortDate(iso: string): string {
 
     <!-- right: detail -->
     <div class="skills-detail">
-      <div v-if="loading" class="skills-state">Loading…</div>
+      <StatePanel v-if="loading" spinner>Loading…</StatePanel>
       <template v-else-if="detail">
         <div class="skills-detail-head">
           <div>
@@ -285,7 +286,7 @@ function shortDate(iso: string): string {
           </div>
         </div>
       </template>
-      <div v-else class="skills-state">Select a skill</div>
+      <StatePanel v-else>Select a skill</StatePanel>
     </div>
   </div>
 

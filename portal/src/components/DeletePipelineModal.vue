@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { getPipelineIdFromRoute } from '@/router'
+import Button from './primitives/Button.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -93,18 +94,8 @@ function handleKeydown(e: KeyboardEvent) {
             This will stop the container and remove all pipeline files.
           </p>
           <div class="modal-buttons">
-            <button
-              class="modal-btn cancel"
-              @click="uiStore.closeDeletePipelineModal"
-            >
-              Cancel
-            </button>
-            <button
-              class="modal-btn delete"
-              @click="handleDelete"
-            >
-              Delete
-            </button>
+            <Button variant="secondary" @click="uiStore.closeDeletePipelineModal">Cancel</Button>
+            <Button variant="danger" @click="handleDelete">Delete</Button>
           </div>
         </template>
         <template v-else>
@@ -177,35 +168,6 @@ function handleKeydown(e: KeyboardEvent) {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm);
-}
-
-.modal-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-sm);
-  border: none;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-family: inherit;
-}
-
-.modal-btn.cancel {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-}
-
-.modal-btn.cancel:hover {
-  background: var(--color-bg-element-hover);
-  color: var(--color-text-hover);
-}
-
-.modal-btn.delete {
-  background: var(--color-error);
-  color: white;
-  font-weight: 500;
-}
-
-.modal-btn.delete:hover {
-  opacity: 0.9;
 }
 
 .deleting {

@@ -3,6 +3,7 @@ import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import { useUiStore } from '@/stores/ui'
+import Button from './primitives/Button.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,12 +165,12 @@ onUnmounted(() => {
           <div v-for="(line, i) in pruneLogs" :key="i" class="prune-log-line">{{ line }}</div>
         </div>
         <div class="modal-buttons">
-          <button class="modal-btn cancel" :disabled="pruneRunning" @click="showPruneModal = false">
+          <Button variant="secondary" :disabled="pruneRunning" @click="showPruneModal = false">
             {{ pruneLogs.length && !pruneRunning ? 'Close' : 'Cancel' }}
-          </button>
-          <button v-if="!pruneLogs.length || pruneRunning" class="modal-btn create" :disabled="pruneRunning" @click="runPrune">
+          </Button>
+          <Button v-if="!pruneLogs.length || pruneRunning" variant="primary" :disabled="pruneRunning" @click="runPrune">
             {{ pruneRunning ? 'Running...' : 'Run Prune' }}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -355,37 +356,4 @@ onUnmounted(() => {
   gap: var(--spacing-sm);
 }
 
-.modal-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-sm);
-  border: none;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-family: inherit;
-}
-
-.modal-btn.cancel {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-}
-
-.modal-btn.cancel:hover {
-  background: var(--color-bg-element-hover);
-  color: var(--color-text-hover);
-}
-
-.modal-btn.create {
-  background: var(--color-accent);
-  color: var(--color-bg-primary);
-  font-weight: 500;
-}
-
-.modal-btn.create:hover {
-  background: var(--color-accent-hover);
-}
-
-.modal-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 </style>

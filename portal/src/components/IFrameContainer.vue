@@ -5,6 +5,7 @@ import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute } from '@/router'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
+import Spinner from './primitives/Spinner.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -254,9 +255,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
       <div v-if="harnessOperationActive" class="loading-overlay">
         <div class="harness-logs-container">
           <div class="status-container">
-            <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-            </svg>
+            <Spinner />
           </div>
           <div class="harness-logs" ref="logsContainer">
             <div v-for="(log, i) in harnessLogs" :key="i" class="harness-log-line">{{ log }}</div>
@@ -276,9 +275,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
       </div>
       <div v-else-if="!harnessVscodeLoaded" class="loading-overlay">
         <div class="status-container">
-          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-          </svg>
+          <Spinner />
           <span>Loading VSCode...</span>
         </div>
       </div>
@@ -293,17 +290,13 @@ window.addEventListener('message', handleVscodeOpenUrl)
       </div>
       <div v-else-if="isStopping" class="loading-overlay">
         <div class="status-container">
-          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-          </svg>
+          <Spinner />
           <span>Stopping {{ pipelineId }}...</span>
         </div>
       </div>
       <div v-else-if="isStarting" class="loading-overlay">
         <div class="status-container">
-          <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-          </svg>
+          <Spinner />
           <span>Starting {{ pipelineId }}...</span>
         </div>
       </div>
@@ -326,9 +319,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
           :class="{ 'split-left': isSplit }"
         >
           <div class="status-container">
-            <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-            </svg>
+            <Spinner />
             <span>Loading VSCode...</span>
           </div>
         </div>
@@ -338,9 +329,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
           :class="{ 'split-right': isSplit }"
         >
           <div class="status-container">
-            <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-            </svg>
+            <Spinner />
             <span>Loading Browser...</span>
           </div>
         </div>
@@ -441,13 +430,6 @@ window.addEventListener('message', handleVscodeOpenUrl)
   height: 20px;
 }
 
-.status-container .spinner {
-  width: 48px;
-  height: 48px;
-  color: var(--color-accent);
-  animation: spin 1s linear infinite;
-}
-
 .harness-logs-container {
   display: flex;
   flex-direction: column;
@@ -473,14 +455,5 @@ window.addEventListener('message', handleVscodeOpenUrl)
   color: var(--color-text-muted);
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
+import Button from './primitives/Button.vue'
 
 // All pipelines use the single Rancher template.
 const TEMPLATE_ID = 'rancher-dashboard'
@@ -243,16 +244,10 @@ function handleOverlayMouseup(e: MouseEvent) {
         </div>
         <div v-if="error" class="error">{{ error }}</div>
         <div class="modal-buttons">
-          <button class="modal-btn cancel" @click="uiStore.closeNewPipelineModal">
-            Cancel
-          </button>
-          <button
-            class="modal-btn create"
-            :disabled="isCreating"
-            @click="handleCreate"
-          >
+          <Button variant="secondary" @click="uiStore.closeNewPipelineModal">Cancel</Button>
+          <Button variant="primary" :disabled="isCreating" @click="handleCreate">
             {{ isCreating ? 'Creating...' : 'Create' }}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -320,39 +315,6 @@ function handleOverlayMouseup(e: MouseEvent) {
   gap: var(--spacing-sm);
 }
 
-.modal-btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-sm);
-  border: none;
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  font-family: inherit;
-}
-
-.modal-btn.cancel {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-}
-
-.modal-btn.cancel:hover {
-  background: var(--color-bg-element-hover);
-  color: var(--color-text-hover);
-}
-
-.modal-btn.create {
-  background: var(--color-accent);
-  color: var(--color-bg-primary);
-  font-weight: 500;
-}
-
-.modal-btn.create:hover {
-  background: var(--color-accent-hover);
-}
-
-.modal-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
 .error {
   color: var(--color-error);

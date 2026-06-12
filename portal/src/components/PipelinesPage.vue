@@ -9,6 +9,8 @@ import DiffViewer from './primitives/DiffViewer.vue'
 import FileViewer from './primitives/FileViewer.vue'
 import ViewportOverlay from './primitives/ViewportOverlay.vue'
 import Modal from './primitives/Modal.vue'
+import Button from './primitives/Button.vue'
+import IconButton from './primitives/IconButton.vue'
 import PipelineGraph from './PipelineGraph.vue'
 import { getBrowserUrl } from '@/services/urls'
 import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact, PipelineArg } from '@/types'
@@ -613,52 +615,35 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                 <span class="deleting-spinner"></span> Deleting…
               </span>
               <div class="header-actions">
-                <button
-                  class="icon-btn"
-                  title="Edit pipeline in the definitions editor"
-                  @click.stop="editPipelineInDefinitions(pl.definition)"
-                >
+                <IconButton title="Edit pipeline in the definitions editor" @click.stop="editPipelineInDefinitions(pl.definition)">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                     <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                   </svg>
-                </button>
-                <button
-                  class="icon-btn"
-                  :class="{ active: expandedPipeline === pl.name }"
-                  title="Run history"
-                  @click.stop="toggleExpand(pl.name)"
-                >
+                </IconButton>
+                <IconButton :active="expandedPipeline === pl.name" title="Run history" @click.stop="toggleExpand(pl.name)">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 4v6h6" />
                     <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                     <polyline points="12 7 12 12 15 14" />
                   </svg>
-                </button>
-                <button
-                  class="icon-btn"
-                  title="Edit env args"
-                  @click.stop="openArgsEditor(pl.name)"
-                >
+                </IconButton>
+                <IconButton title="Edit env args" @click.stop="openArgsEditor(pl.name)">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
                     <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
                     <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
                     <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
                   </svg>
-                </button>
-                <button
-                  class="icon-btn danger"
-                  title="Delete pipeline"
-                  @click.stop="deleteTarget = pl.name"
-                >
+                </IconButton>
+                <IconButton variant="danger" title="Delete pipeline" @click.stop="deleteTarget = pl.name">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
                     <path d="M10 11v6M14 11v6" />
                     <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                   </svg>
-                </button>
+                </IconButton>
               </div>
             </div>
           </div>
@@ -993,10 +978,10 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         </p>
       </div>
       <template #footer>
-        <button class="modal-btn cancel" :disabled="deleting" @click="deleteTarget = null">Cancel</button>
-        <button class="modal-btn danger" :disabled="deleting" @click="confirmDelete">
+        <Button variant="secondary" :disabled="deleting" @click="deleteTarget = null">Cancel</Button>
+        <Button variant="danger" :disabled="deleting" @click="confirmDelete">
           {{ deleting ? 'Deleting...' : 'Delete' }}
-        </button>
+        </Button>
       </template>
     </Modal>
 
@@ -1022,10 +1007,10 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         <div v-if="argsEditor.error" class="auth-error">{{ argsEditor.error }}</div>
       </div>
       <template #footer>
-        <button class="modal-btn cancel" :disabled="argsEditor.saving" @click="argsEditor = null">Cancel</button>
-        <button v-if="argsEditor.defs.length" class="modal-btn create" :disabled="argsEditor.saving" @click="saveArgsEditor">
+        <Button variant="secondary" :disabled="argsEditor.saving" @click="argsEditor = null">Cancel</Button>
+        <Button v-if="argsEditor.defs.length" variant="primary" :disabled="argsEditor.saving" @click="saveArgsEditor">
           {{ argsEditor.saving ? 'Saving…' : 'Save' }}
-        </button>
+        </Button>
       </template>
     </Modal>
 
@@ -1069,10 +1054,10 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         </div>
       </div>
       <template #footer>
-        <button class="modal-btn cancel" :disabled="creating" @click="showNewModal = false">Cancel</button>
-        <button class="modal-btn create" :disabled="!newName.trim() || creating || !argsValid" @click="handleCreate">
+        <Button variant="secondary" :disabled="creating" @click="showNewModal = false">Cancel</Button>
+        <Button variant="primary" :disabled="!newName.trim() || creating || !argsValid" @click="handleCreate">
           {{ creating ? 'Creating...' : 'Create' }}
-        </button>
+        </Button>
       </template>
     </Modal>
 
@@ -1084,9 +1069,9 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
           Sign in once — credentials are shared across all pipelines.
         </p>
         <div v-if="!authModal.url" class="auth-getlink">
-          <button class="modal-btn create" :disabled="authModal.loading" @click="fetchLoginLink">
+          <Button variant="primary" :disabled="authModal.loading" @click="fetchLoginLink">
             {{ authModal.loading ? 'Getting link…' : 'Get sign-in link' }}
-          </button>
+          </Button>
         </div>
         <template v-else>
           <ol class="auth-steps">
@@ -1106,15 +1091,15 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         <div v-if="authModal.error" class="auth-error">{{ authModal.error }}</div>
       </div>
       <template #footer>
-        <button class="modal-btn cancel" :disabled="authModal.loading" @click="authModal = null">Cancel</button>
-        <button
+        <Button variant="secondary" :disabled="authModal.loading" @click="authModal = null">Cancel</Button>
+        <Button
           v-if="authModal.url"
-          class="modal-btn create"
+          variant="primary"
           :disabled="authModal.loading || !authModal.code.trim()"
           @click="submitLoginCode"
         >
           {{ authModal.loading ? 'Signing in…' : 'Complete sign-in & run' }}
-        </button>
+        </Button>
       </template>
     </Modal>
 
@@ -1144,18 +1129,18 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         <div v-if="githubAuthModal.error" class="auth-error">{{ githubAuthModal.error }}</div>
       </div>
       <template #footer>
-        <button class="modal-btn cancel" :disabled="githubAuthModal.loading" @click="githubAuthModal = null">Cancel</button>
-        <button class="modal-btn" :disabled="githubAuthModal.loading" @click="recheckGithubAuth">
+        <Button variant="secondary" :disabled="githubAuthModal.loading" @click="githubAuthModal = null">Cancel</Button>
+        <Button variant="secondary" :disabled="githubAuthModal.loading" @click="recheckGithubAuth">
           {{ githubAuthModal.loading ? 'Checking…' : 'Re-check' }}
-        </button>
-        <button class="modal-btn" :disabled="githubAuthModal.loading" @click="captureGithubSession">Capture session</button>
-        <button
+        </Button>
+        <Button variant="secondary" :disabled="githubAuthModal.loading" @click="captureGithubSession">Capture session</Button>
+        <Button
           v-if="githubAuthModal.status.authenticated"
-          class="modal-btn create"
+          variant="primary"
           :disabled="githubAuthModal.loading"
           @click="runAnywayWithoutGithub"
-        >Run</button>
-        <button v-else class="modal-btn" :disabled="githubAuthModal.loading" @click="runAnywayWithoutGithub">Run anyway</button>
+        >Run</Button>
+        <Button v-else variant="secondary" :disabled="githubAuthModal.loading" @click="runAnywayWithoutGithub">Run anyway</Button>
       </template>
     </Modal>
 
@@ -1362,32 +1347,6 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.icon-btn {
-  padding: 6px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  border-radius: 5px;
-  transition: background 0.15s, color 0.15s;
-  display: flex;
-  align-items: center;
-}
-
-.icon-btn:hover {
-  background: var(--color-bg-element);
-  color: var(--color-text-hover);
-}
-
-.icon-btn.active {
-  color: var(--color-accent);
-  background: var(--color-bg-element);
-}
-
-.icon-btn.danger:hover {
-  color: var(--color-error);
 }
 
 /* Stage row holds the stage graph plus a large, right-aligned Run button */
@@ -2527,49 +2486,6 @@ a.artifact-row:hover,
 .gh-status.ok .gh-dot { background: var(--color-status-running); }
 .gh-meta { color: var(--color-text-muted); margin-left: 2px; }
 
-.modal-btn {
-  padding: 8px 18px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 500;
-  transition: background 0.15s, opacity 0.15s;
-}
-
-.modal-btn.cancel {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-}
-
-.modal-btn.cancel:hover {
-  background: var(--color-bg-element-hover);
-  color: var(--color-text-hover);
-}
-
-.modal-btn.create {
-  background: var(--color-accent);
-  color: var(--color-text-bright);
-}
-
-.modal-btn.create:hover {
-  background: var(--color-accent-hover);
-}
-
-.modal-btn.danger {
-  background: var(--color-error);
-  color: var(--color-text-bright);
-}
-
-.modal-btn.danger:hover {
-  background: var(--color-status-stopped);
-}
-
-.modal-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
 
 /* env args editor */
 .args-form { display: flex; flex-direction: column; gap: 14px; width: 100%; }
