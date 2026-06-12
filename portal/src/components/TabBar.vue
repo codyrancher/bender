@@ -2,9 +2,11 @@
 import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
+import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
 const router = useRouter()
+const ui = useUiStore()
 
 const systemStats = ref<{ memTotal: number; memUsed: number; diskTotal: number; diskUsed: number } | null>(null)
 const showPruneModal = ref(false)
@@ -60,7 +62,6 @@ async function runPrune() {
 const isHome = computed(() => route.name === 'home')
 const isDefinitions = computed(() => route.name === 'definitions')
 const isInsights = computed(() => route.name === 'insights')
-const isClaudeCli = computed(() => route.name === 'cli')
 const isSettings = computed(() => route.name === 'settings')
 
 onMounted(() => {
@@ -114,17 +115,6 @@ onUnmounted(() => {
       </button>
       <button
         class="bottom-icon-btn"
-        :class="{ active: isClaudeCli }"
-        title="Claude CLI (global)"
-        @click="router.push('/cli')"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="4 17 10 11 4 5" />
-          <line x1="12" y1="19" x2="20" y2="19" />
-        </svg>
-      </button>
-      <button
-        class="bottom-icon-btn"
         :class="{ active: isSettings }"
         title="Settings"
         @click="router.push('/settings')"
@@ -135,6 +125,21 @@ onUnmounted(() => {
         </svg>
       </button>
     </div>
+
+    <!-- Centered terminal toggle: opens the global terminal as a bottom drawer
+         so it's reachable on any page without losing the session. -->
+    <button
+      class="bottom-icon-btn term-toggle"
+      :class="{ active: ui.terminalOpen }"
+      title="Terminal (global Claude CLI)"
+      @click="ui.toggleTerminal()"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    </button>
+
     <div v-if="systemStats" class="system-stats">
       <div class="stat-row">
         <span class="stat-label">MEM</span>
@@ -173,6 +178,7 @@ onUnmounted(() => {
 
 <style scoped>
 .bottom-bar {
+  position: relative;
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -181,6 +187,14 @@ onUnmounted(() => {
   border-top: var(--border-width-sm) solid var(--color-border-dark);
   padding: var(--spacing-sm) var(--spacing-md);
   gap: var(--spacing-md);
+}
+
+/* Terminal toggle: centered in the bar, independent of the side groups. */
+.term-toggle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .system-stats {

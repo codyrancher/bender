@@ -68,11 +68,6 @@ const router = createRouter({
       component: EmptyComponent,
     },
     {
-      path: '/cli',
-      name: 'cli',
-      component: EmptyComponent,
-    },
-    {
       // Catch-all redirect
       path: '/:pathMatch(.*)*',
       redirect: '/',
