@@ -423,6 +423,9 @@ const stageDetail = computed(() => {
   if (!sel) return null
   const pl = pipelines.value.find(p => p.name === sel.pipeline)
   const defStage = pl?.stages?.[sel.stageIndex]
+  // runId null = opened from the DAG → follow the latest run (so after a rerun
+  // the modal and "View at run time" track the new run, not the stale one).
+  // A concrete runId = opened from run history → pin that specific run.
   const run = sel.runId !== null
     ? pipelineRuns.value[sel.pipeline]?.find(r => r.id === sel.runId) || null
     : latestRun(sel.pipeline)
@@ -670,7 +673,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                 <div
                   class="node-stage gnode"
                   :class="displayStages(pl.name)[index]?.status || 'pending'"
-                  @click="selectStage(pl.name, index, latestRun(pl.name)?.id ?? null)"
+                  @click="selectStage(pl.name, index, null)"
                 >
                   <svg v-if="displayStages(pl.name)[index]?.status === 'running'" class="running-ring">
                     <rect />
