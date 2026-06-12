@@ -3,7 +3,7 @@ import { spawnSync, spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
-import { TEMPLATE_IDS, getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, TemplateKeyDef, listTemplates, createTemplate, updateTemplateMeta, deleteTemplate, getTemplateIcon, setTemplateIcon, getTemplatePath, renderString } from './templates';
+import { getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, getTemplatePath, renderString } from './templates';
 import { extractPipelineFlags } from './pipelineFlags';
 import { broadcast } from './events';
 import { materializeInto as materializeDefinition, writeDefinition, getDefinition, parseArgs } from './definitions';
@@ -278,10 +278,6 @@ function snapshotWorkspace(project: string, runId: number, stageIndex: number): 
   if (stageIndex > 0 && fs.existsSync(prev)) args.push(`--link-dest=${prev}`);
   args.push(ws + '/', dest + '/');
   spawnSync('rsync', args, { stdio: 'ignore' });
-}
-
-function hasSnapshot(project: string, runId: number, stageIndex: number): boolean {
-  return fs.existsSync(snapshotDir(project, runId, stageIndex));
 }
 
 // Restore the workspace to a stage's snapshot, but keep the CURRENT pipeline.md
@@ -1142,36 +1138,7 @@ export function registerRoutes(app: Express): void {
 
   const DEFINITIONS_DIR = path.join(__dirname, '..', 'pipeline-definitions');
 
-  app.get('/api/pipeline-definitions', (_req: Request, res: Response) => {
-    try {
-      const files = fs.readdirSync(DEFINITIONS_DIR).filter(f => f.endsWith('.pipeline.md'));
-      const definitions = files.map(f => {
-        const content = fs.readFileSync(path.join(DEFINITIONS_DIR, f), 'utf-8');
-        return {
-          id: f.replace('.pipeline.md', ''),
-          name: f.replace('.pipeline.md', '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-          filename: f,
-          stages: parsePipelineStages(content),
-        };
-      });
-      res.json({ definitions });
-    } catch {
-      res.json({ definitions: [] });
-    }
-  });
 
-  app.get('/api/pipeline-definitions/:id', (req: Request, res: Response) => {
-    try {
-      const filePath = path.join(DEFINITIONS_DIR, `${req.params.id}.pipeline.md`);
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'Pipeline definition not found' });
-      }
-      const content = fs.readFileSync(filePath, 'utf-8');
-      res.json({ id: req.params.id, content });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // --- Pipeline runs (execution records) ---
 
@@ -1913,108 +1880,7 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  app.put('/api/pipelines/:name/runs/:runId/stages/:stageIndex', (req: Request, res: Response) => {
-    try {
-      const db = getRunsDb();
-      const { runId, stageIndex } = req.params;
-      const { status, error, successCriteriaMet } = req.body;
 
-      const stage = db.prepare(
-        'SELECT * FROM pipeline_stage_records WHERE run_id = ? AND stage_index = ?'
-      ).get(runId, stageIndex) as any;
-
-      if (!stage) {
-        return res.status(404).json({ error: 'Stage record not found' });
-      }
-
-      const now = new Date().toISOString();
-      const updates: string[] = [];
-      const params: any[] = [];
-
-      if (status) {
-        updates.push('status = ?');
-        params.push(status);
-
-        if (status === 'running' && !stage.started_at) {
-          updates.push('started_at = ?');
-          params.push(now);
-        }
-        if (status === 'completed' || status === 'failed') {
-          updates.push('completed_at = ?');
-          params.push(now);
-          if (stage.started_at) {
-            const durationMs = new Date(now).getTime() - new Date(stage.started_at).getTime();
-            updates.push('duration_ms = ?');
-            params.push(durationMs);
-          }
-        }
-      }
-      if (error !== undefined) {
-        updates.push('error = ?');
-        params.push(error || null);
-      }
-      if (successCriteriaMet !== undefined) {
-        updates.push('success_criteria_met = ?');
-        params.push(successCriteriaMet ? 1 : 0);
-      }
-
-      if (updates.length) {
-        params.push(runId, stageIndex);
-        db.prepare(
-          `UPDATE pipeline_stage_records SET ${updates.join(', ')} WHERE run_id = ? AND stage_index = ?`
-        ).run(...params);
-      }
-
-      // If stage completed successfully, auto-advance next stage to running
-      if (status === 'completed') {
-        const nextIndex = parseInt(stageIndex) + 1;
-        const nextStage = db.prepare(
-          'SELECT * FROM pipeline_stage_records WHERE run_id = ? AND stage_index = ?'
-        ).get(runId, nextIndex) as any;
-
-        if (nextStage && nextStage.status === 'pending') {
-          db.prepare(
-            'UPDATE pipeline_stage_records SET status = ?, started_at = ? WHERE run_id = ? AND stage_index = ?'
-          ).run('running', now, runId, nextIndex);
-        } else if (!nextStage) {
-          // Last stage completed — mark run as completed
-          db.prepare(
-            'UPDATE pipeline_runs SET status = ?, completed_at = ? WHERE id = ?'
-          ).run('completed', now, runId);
-        }
-      }
-
-      if (status === 'failed') {
-        db.prepare(
-          'UPDATE pipeline_runs SET status = ?, completed_at = ? WHERE id = ?'
-        ).run('failed', now, runId);
-      }
-
-      const updatedRun = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
-      const stageRecords = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
-
-      broadcast('pipeline-run-changed', { pipeline: req.params.name, runId: Number(runId) });
-      res.json({ run: { ...updatedRun as any, stages: stageRecords } });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  app.delete('/api/pipelines/:name/runs/:runId', (req: Request, res: Response) => {
-    try {
-      const db = getRunsDb();
-      const runId = Number(req.params.runId);
-      cancelRun(runId, req.params.name);
-      db.prepare('DELETE FROM pipeline_stage_records WHERE run_id = ?').run(runId);
-      db.prepare('DELETE FROM pipeline_runs WHERE id = ?').run(runId);
-      // Remove the run's artifact files from the workspace
-      fs.rmSync(path.join(PIPELINES_DIR, req.params.name, ARTIFACTS_ROOT, `run-${runId}`), { recursive: true, force: true });
-      broadcast('pipeline-run-changed', { pipeline: req.params.name, runId });
-      res.json({ status: 'deleted' });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Cancel an in-flight run
   app.post('/api/pipelines/:name/runs/:runId/cancel', (req: Request, res: Response) => {
@@ -2091,88 +1957,6 @@ export function registerRoutes(app: Express): void {
   });
 
   // Rerun a single stage within an existing run (resets it + later stages, re-executes)
-  app.post('/api/pipelines/:name/runs/:runId/stages/:stageIndex/rerun', (req: Request, res: Response) => {
-    try {
-      const db = getRunsDb();
-      const pipeline = req.params.name;
-      const runId = Number(req.params.runId);
-      const idx = parseInt(req.params.stageIndex);
-
-      const stage = db.prepare(
-        'SELECT * FROM pipeline_stage_records WHERE run_id = ? AND stage_index = ?'
-      ).get(runId, idx) as any;
-      if (!stage) {
-        return res.status(404).json({ error: 'Stage record not found' });
-      }
-
-      // Stop any in-flight execution of this run before resetting
-      cancelActiveRunsForPipeline(pipeline);
-
-      // Optionally restore the workspace to this stage's start-of-run snapshot
-      // (keeping the current/edited pipeline.md + skills) for an exact re-run.
-      const fromSnapshot = req.body?.fromSnapshot === true;
-      let restored = false;
-      if (fromSnapshot) restored = restoreWorkspace(pipeline, runId, idx);
-
-      // Re-sync the reset stages from the CURRENT workspace definition so edits
-      // to pipeline.md / SKILL.md take effect on the re-run.
-      let parsed: PipelineStage[] = [];
-      try {
-        const md = fs.readFileSync(path.join(PIPELINES_DIR, pipeline, 'pipeline.md'), 'utf-8');
-        parsed = parsePipelineStages(md);
-      } catch { /* keep existing records if pipeline.md is unreadable */ }
-
-      const reset = db.transaction(() => {
-        const records = db.prepare(
-          'SELECT * FROM pipeline_stage_records WHERE run_id = ? AND stage_index >= ? ORDER BY stage_index'
-        ).all(runId, idx) as any[];
-        for (const rec of records) {
-          const ps = parsed[rec.stage_index];
-          const skillName = ps?.skill || rec.skill;
-          let skillMd = rec.skill_md;
-          try {
-            const sp = resolveSkillPath(pipeline, skillName);
-            if (sp && fs.existsSync(sp)) skillMd = fs.readFileSync(sp, 'utf-8');
-          } catch { /* keep existing */ }
-          db.prepare(
-            `UPDATE pipeline_stage_records
-             SET status = 'pending', started_at = NULL, completed_at = NULL, duration_ms = NULL, error = NULL,
-                 success_criteria_met = 0, logs = NULL, artifacts = NULL,
-                 success_criteria = ?, skill = ?, skill_md = ?, next_indices = ?
-             WHERE id = ?`
-          ).run(
-            ps?.successCriteria ?? rec.success_criteria,
-            skillName,
-            skillMd,
-            ps ? JSON.stringify(ps.next) : rec.next_indices,
-            rec.id,
-          );
-        }
-        db.prepare(
-          "UPDATE pipeline_runs SET status = 'running', completed_at = NULL WHERE id = ?"
-        ).run(runId);
-      });
-      reset();
-
-      if (fromSnapshot && !restored) {
-        // Surface that there was no snapshot to restore (older run) — still reruns.
-        try {
-          const cur = db.prepare('SELECT logs FROM pipeline_stage_records WHERE run_id = ? AND stage_index = ?').get(runId, idx) as any;
-          db.prepare('UPDATE pipeline_stage_records SET logs = ? WHERE run_id = ? AND stage_index = ?')
-            .run(`[note] No saved snapshot for this stage — re-running without state restore.\n${cur?.logs || ''}`, runId, idx);
-        } catch { /* ignore */ }
-      }
-
-      broadcast('pipeline-run-changed', { pipeline, runId });
-      startExecution(runId, pipeline);
-
-      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(runId);
-      const stages = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(runId);
-      res.json({ run: { ...run as any, stages } });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Rerun the pipeline starting at a particular stage as a brand-new run. The
   // preceding stages are copied verbatim from the source run (their status,
@@ -2283,57 +2067,10 @@ export function registerRoutes(app: Express): void {
 
   // --- Pipeline.md & skill editing ---
 
-  app.get('/api/pipelines/:name/pipeline-md', (req: Request, res: Response) => {
-    try {
-      const mdPath = path.join(PIPELINES_DIR, req.params.name, 'pipeline.md');
-      const content = fs.existsSync(mdPath) ? fs.readFileSync(mdPath, 'utf-8') : '';
-      res.json({ content });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.put('/api/pipelines/:name/pipeline-md', (req: Request, res: Response) => {
-    try {
-      const pipelineDir = path.join(PIPELINES_DIR, req.params.name);
-      if (!fs.existsSync(pipelineDir)) {
-        return res.status(404).json({ error: 'Pipeline not found' });
-      }
-      const content = typeof req.body.content === 'string' ? req.body.content : '';
-      fs.writeFileSync(path.join(pipelineDir, 'pipeline.md'), content);
-      broadcast('pipelines-changed');
-      res.json({ stages: parsePipelineStages(content) });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Live CLAUDE.md for a pipeline workspace — the agent's run-time instructions.
-  app.get('/api/pipelines/:name/claude-md', (req: Request, res: Response) => {
-    try {
-      const claudePath = path.join(PIPELINES_DIR, req.params.name, 'CLAUDE.md');
-      const content = fs.existsSync(claudePath) ? fs.readFileSync(claudePath, 'utf-8') : '';
-      res.json({ content });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.put('/api/pipelines/:name/claude-md', (req: Request, res: Response) => {
-    try {
-      const pipelineDir = path.join(PIPELINES_DIR, req.params.name);
-      if (!fs.existsSync(pipelineDir)) {
-        return res.status(404).json({ error: 'Pipeline not found' });
-      }
-      const content = typeof req.body.content === 'string' ? req.body.content : '';
-      const claudePath = path.join(pipelineDir, 'CLAUDE.md');
-      fs.writeFileSync(claudePath, content);
-      try { fs.chownSync(claudePath, 1000, 1000); } catch { /* best effort */ }
-      res.json({ status: 'saved' });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Declared pipeline args (from the workspace pipeline.md "## Args" section) with
   // their current values (from .bender.json). Values feed future runs as env vars.
@@ -2389,38 +2126,7 @@ export function registerRoutes(app: Express): void {
     return path.join(PIPELINES_DIR, project, '.claude', 'skills', skill, 'SKILL.md');
   }
 
-  app.get('/api/pipelines/:name/skills/:skill', (req: Request, res: Response) => {
-    try {
-      const skillPath = resolveSkillPath(req.params.name, req.params.skill);
-      if (!skillPath) {
-        return res.status(400).json({ error: 'Invalid skill name' });
-      }
-      const exists = fs.existsSync(skillPath);
-      const content = exists ? fs.readFileSync(skillPath, 'utf-8') : '';
-      res.json({ content, exists });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.put('/api/pipelines/:name/skills/:skill', (req: Request, res: Response) => {
-    try {
-      const skillPath = resolveSkillPath(req.params.name, req.params.skill);
-      if (!skillPath) {
-        return res.status(400).json({ error: 'Invalid skill name' });
-      }
-      const pipelineDir = path.join(PIPELINES_DIR, req.params.name);
-      if (!fs.existsSync(pipelineDir)) {
-        return res.status(404).json({ error: 'Pipeline not found' });
-      }
-      const content = typeof req.body.content === 'string' ? req.body.content : '';
-      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-      fs.writeFileSync(skillPath, content);
-      res.json({ status: 'saved' });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Push a pipeline's pipeline.md + its referenced skills to the global definitions repo
   app.post('/api/pipelines/:name/push-definition', (req: Request, res: Response) => {
@@ -2454,123 +2160,15 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  // --- Template management ---
 
-  app.get('/api/templates', (_req: Request, res: Response) => {
-    try {
-      res.json({ templates: listTemplates() });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.post('/api/templates', (req: Request, res: Response) => {
-    try {
-      const id = (req.body.id || '').trim();
-      const name = (req.body.name || '').trim();
-      const description = (req.body.description || '').trim();
 
-      if (!id || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) {
-        res.status(400).json({ error: 'Invalid template ID. Use alphanumeric, hyphens, underscores.' });
-        return;
-      }
-      if (!name) {
-        res.status(400).json({ error: 'Template name is required' });
-        return;
-      }
 
-      const template = createTemplate(id, name, description);
-      res.json({ status: 'created', template });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.put('/api/templates/:id', (req: Request, res: Response) => {
-    try {
-      const id = req.params.id;
-      const name = (req.body.name || '').trim();
-      const description = (req.body.description || '').trim();
 
-      if (!name) {
-        res.status(400).json({ error: 'Template name is required' });
-        return;
-      }
 
-      updateTemplateMeta(id, name, description);
-      res.json({ status: 'updated', id });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.delete('/api/templates/:id', (req: Request, res: Response) => {
-    try {
-      deleteTemplate(req.params.id);
-      res.json({ status: 'deleted', id: req.params.id });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.get('/api/templates/:id/icon', (req: Request, res: Response) => {
-    const svg = getTemplateIcon(req.params.id);
-    if (!svg) {
-      res.status(404).json({ error: 'No icon found' });
-      return;
-    }
-    res.setHeader('Content-Type', 'image/svg+xml');
-    res.send(svg);
-  });
-
-  app.put('/api/templates/:id/icon', (req: Request, res: Response) => {
-    try {
-      const svg = req.body.svg || '';
-      if (!svg) {
-        res.status(400).json({ error: 'SVG content is required' });
-        return;
-      }
-      setTemplateIcon(req.params.id, svg);
-      res.json({ status: 'updated' });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // --- Template keys ---
-
-  app.get('/api/templates/:id/keys', (req: Request, res: Response) => {
-    try {
-      const id = req.params.id;
-      const settings = readSettings();
-      const values = settings.templateKeys?.[id] || {};
-      res.json({ keys: values });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  app.put('/api/templates/:id/keys', (req: Request, res: Response) => {
-    try {
-      const id = req.params.id;
-      const keys = req.body;
-      if (typeof keys !== 'object' || keys === null || Array.isArray(keys)) {
-        res.status(400).json({ error: 'Keys must be an object' });
-        return;
-      }
-      const settings = readSettings();
-      if (!settings.templateKeys) settings.templateKeys = {};
-      const merged = { ...settings.templateKeys[id], ...keys };
-      for (const [k, v] of Object.entries(merged)) {
-        if (!v) delete merged[k];
-      }
-      settings.templateKeys[id] = merged;
-      writeSettings(settings);
-      res.json({ status: 'updated', keys: merged });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // --- Browser cookie sync (inject host browser cookies into sidecar Chromium via CDP) ---
   // The browser sidecar shares the project container's network namespace,
@@ -2761,15 +2359,6 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  app.get('/api/browser/cookie-snapshot/status', (_req: Request, res: Response) => {
-    try {
-      const raw = fs.readFileSync(COOKIE_SNAPSHOT_PATH, 'utf-8');
-      const parsed = JSON.parse(raw);
-      res.json({ present: true, updatedAt: parsed.updatedAt, count: parsed.count });
-    } catch {
-      res.json({ present: false });
-    }
-  });
 
   // Manual sync from the cookie-bridge UI: inject into one project AND
   // persist the snapshot so future sidecar starts auto-inject too.
@@ -3284,52 +2873,6 @@ Files ending in \`.sh\` automatically get executable permissions (chmod 755).
   });
 
   // Assign external port to a project service
-  app.post('/api/settings/port-mappings', (req: Request, res: Response) => {
-    try {
-      const { project, service, port } = req.body;
-      if (!project || !service || typeof port !== 'number') {
-        res.status(400).json({ error: 'project, service, and port are required' });
-        return;
-      }
-
-      const settings = readSettings();
-      if (port < settings.portRange.start || port > settings.portRange.end) {
-        res.status(400).json({ error: `Port must be in range ${settings.portRange.start}-${settings.portRange.end}` });
-        return;
-      }
-
-      // Check port not already in use by another project
-      if (fs.existsSync(PIPELINES_DIR)) {
-        for (const name of fs.readdirSync(PIPELINES_DIR)) {
-          if (name === project) continue;
-          const meta = readBenderJson(name);
-          if (meta?.externalPorts) {
-            for (const existingPort of Object.values(meta.externalPorts)) {
-              if (existingPort === port) {
-                res.status(409).json({ error: `Port ${port} already allocated to project ${name}` });
-                return;
-              }
-            }
-          }
-        }
-      }
-
-      const meta = readBenderJson(project);
-      if (!meta) {
-        res.status(404).json({ error: 'Pipeline not found' });
-        return;
-      }
-
-      meta.externalPorts = meta.externalPorts || {};
-      meta.externalPorts[service] = port;
-      const harnessPath = path.join(PIPELINES_DIR, project, '.bender.json');
-      fs.writeFileSync(harnessPath, JSON.stringify(meta, null, 2));
-
-      res.json({ status: 'assigned', pipeline: project, service, port });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Remove external port mapping
   app.delete('/api/settings/port-mappings/:pipeline/:service', (req: Request, res: Response) => {
@@ -3359,44 +2902,8 @@ Files ending in \`.sh\` automatically get executable permissions (chmod 755).
   });
 
   // Update keys
-  app.put('/api/settings/keys', (req: Request, res: Response) => {
-    try {
-      const keys = req.body;
-      if (typeof keys !== 'object' || keys === null || Array.isArray(keys)) {
-        res.status(400).json({ error: 'Keys must be an object' });
-        return;
-      }
-      const settings = readSettings();
-      const merged = { ...settings.keys, ...keys };
-      // Remove keys with empty values
-      for (const [k, v] of Object.entries(merged)) {
-        if (!v) delete merged[k];
-      }
-      settings.keys = merged;
-      writeSettings(settings);
-      res.json({ status: 'updated', keys: settings.keys });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // Delete a single key
-  app.delete('/api/settings/keys/:key', (req: Request, res: Response) => {
-    try {
-      const { key } = req.params;
-      const settings = readSettings();
-      if (settings.keys) {
-        delete settings.keys[key];
-        if (Object.keys(settings.keys).length === 0) {
-          delete settings.keys;
-        }
-      }
-      writeSettings(settings);
-      res.json({ status: 'deleted', key });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // --- Port forwarding (map a public port to a local port in a project container) ---
 

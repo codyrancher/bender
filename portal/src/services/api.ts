@@ -5,7 +5,6 @@ import type {
   UploadResponse,
   SettingsResponse,
   PortRange,
-  TemplatesResponse,
   HarnessStatus,
   PipelineRun,
   PipelineStage,
@@ -173,14 +172,6 @@ export const api = {
 
   async stopForward(publicPort: number): Promise<{ status: string }> {
     return fetchJSON(`${API_BASE}/forwards/${publicPort}`, { method: 'DELETE' })
-  },
-
-  async getPipelineDefinitions(): Promise<{ definitions: Array<{ id: string; name: string; filename: string }> }> {
-    return fetchJSON(`${API_BASE}/pipeline-definitions`)
-  },
-
-  async getPipelineDefinition(id: string): Promise<{ id: string; content: string }> {
-    return fetchJSON(`${API_BASE}/pipeline-definitions/${id}`)
   },
 
   // Git-backed global definitions (bundle pipeline.md + skills)
@@ -355,55 +346,7 @@ export const api = {
     })
   },
 
-  // Template management
-  async getTemplates(): Promise<TemplatesResponse> {
-    return fetchJSON<TemplatesResponse>(`${API_BASE}/templates`)
-  },
-
-  async createTemplate(id: string, name: string, description: string): Promise<{ status: string; id: string }> {
-    return fetchJSON(`${API_BASE}/templates`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, name, description }),
-    })
-  },
-
-  async updateTemplate(id: string, name: string, description: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/templates/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description }),
-    })
-  },
-
-  async deleteTemplate(id: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/templates/${id}`, { method: 'DELETE' })
-  },
-
-  getTemplateIconUrl(id: string): string {
-    return `${API_BASE}/templates/${id}/icon`
-  },
-
-  async updateTemplateIcon(id: string, svgContent: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/templates/${id}/icon`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ svg: svgContent }),
-    })
-  },
-
-  async getTemplateKeys(id: string): Promise<{ keys: Record<string, string> }> {
-    return fetchJSON(`${API_BASE}/templates/${id}/keys`)
-  },
-
-  async updateTemplateKeys(id: string, keys: Record<string, string>): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/templates/${id}/keys`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys }),
-    })
-  },
-
+  // Template editor (code-server) lifecycle — used by the template-editor route.
   async startTemplateEditor(id: string): Promise<{ status: string }> {
     return fetchJSON(`${API_BASE}/templates/${id}/editor`, { method: 'POST' })
   },
@@ -430,31 +373,6 @@ export const api = {
 
   async createPipelineRun(pipeline: string): Promise<{ run: PipelineRun }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs`, { method: 'POST' })
-  },
-
-  async updateStageRecord(
-    pipeline: string,
-    runId: number,
-    stageIndex: number,
-    updates: { status?: string; error?: string; successCriteriaMet?: boolean },
-  ): Promise<{ run: PipelineRun }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/stages/${stageIndex}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    })
-  },
-
-  async deletePipelineRun(pipeline: string, runId: number): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}`, { method: 'DELETE' })
-  },
-
-  async rerunStage(pipeline: string, runId: number, stageIndex: number, opts?: { fromSnapshot?: boolean }): Promise<{ run: PipelineRun }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/stages/${stageIndex}/rerun`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromSnapshot: opts?.fromSnapshot ?? false }),
-    })
   },
 
   // Rerun starting at a stage as a brand-new run: preceding stages are copied
@@ -499,30 +417,6 @@ export const api = {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/github-auth/capture`, { method: 'POST' })
   },
 
-  async getPipelineMd(pipeline: string): Promise<{ content: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/pipeline-md`)
-  },
-
-  async savePipelineMd(pipeline: string, content: string): Promise<{ stages: PipelineStage[] }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/pipeline-md`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
-  },
-
-  async getPipelineClaudeMd(pipeline: string): Promise<{ content: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-md`)
-  },
-
-  async savePipelineClaudeMd(pipeline: string, content: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/claude-md`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
-  },
-
   async getPipelineArgs(pipeline: string): Promise<{ args: Array<{ name: string; description: string; required: boolean; default: string; value: string }> }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/args`)
   },
@@ -532,18 +426,6 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ values }),
-    })
-  },
-
-  async getSkill(pipeline: string, skill: string): Promise<{ content: string; exists: boolean }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/skills/${skill}`)
-  },
-
-  async saveSkill(pipeline: string, skill: string, content: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/skills/${skill}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
     })
   },
 }
