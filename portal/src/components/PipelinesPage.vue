@@ -375,8 +375,11 @@ function formatSize(bytes?: number): string {
 function editSkillInDefinitions(skill: string) {
   if (skill) router.push('/definitions/skills/' + skill)
 }
-function editPipelineInDefinitions(pipeline: string) {
-  router.push('/definitions/pipelines/' + pipeline)
+function editPipelineInDefinitions(definition?: string) {
+  // Link to the definition this instance was created from — NOT the instance
+  // name (they often differ). If unknown, open the Pipelines definitions list
+  // rather than guessing a wrong/nonexistent id.
+  router.push(definition ? '/definitions/pipelines/' + definition : '/definitions/pipelines')
 }
 
 function selectStage(pipeline: string, stageIndex: number, runId: number | null) {
@@ -613,7 +616,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                 <button
                   class="icon-btn"
                   title="Edit pipeline in the definitions editor"
-                  @click.stop="editPipelineInDefinitions(pl.name)"
+                  @click.stop="editPipelineInDefinitions(pl.definition)"
                 >
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />

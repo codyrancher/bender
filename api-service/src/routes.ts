@@ -224,6 +224,9 @@ function getContainerStatus(containerName: string): string {
 
 interface BenderJson {
   template?: string;
+  // The pipeline-definition id this instance was created from (if any). Used to
+  // link "Edit pipeline" to the right definition (the instance name often differs).
+  definitionId?: string;
   uid?: string;
   sidecars: string[];
   browserPort?: number;
@@ -659,6 +662,7 @@ export function registerRoutes(app: Express): void {
         container: string;
         status: string;
         template?: string;
+        definition?: string;
         browserPort?: number;
         browserHost?: string;
         stages?: PipelineStage[];
@@ -679,6 +683,7 @@ export function registerRoutes(app: Express): void {
               container: containerName,
               status,
               ...(meta?.template && { template: meta.template }),
+              ...(meta?.definitionId && { definition: meta.definitionId }),
               ...(browserPort && { browserPort }),
               ...(meta?.browserHost && { browserHost: meta.browserHost }),
               ...(stages.length && { stages }),
@@ -837,6 +842,7 @@ export function registerRoutes(app: Express): void {
 
       const harnessJson: BenderJson = {
         ...(template && { template }),
+        ...(req.body.definitionId && { definitionId: String(req.body.definitionId).trim() }),
         uid: `${Date.now().toString(36)}-${hexId(8)}`,
         sidecars: sidecars.map(s => s.suffix),
         browserPort,

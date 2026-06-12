@@ -68,6 +68,8 @@ export interface Pipeline {
   container: string
   status: PipelineStatus
   template?: string
+  // The definition id this instance was created from (often ≠ the instance name).
+  definition?: string
   browserPort?: number
   browserHost?: string
   stages?: PipelineStage[]
