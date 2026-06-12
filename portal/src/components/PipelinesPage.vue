@@ -14,6 +14,15 @@ import IconButton from './primitives/IconButton.vue'
 import PipelineGraph from './PipelineGraph.vue'
 import { getBrowserUrl } from '@/services/urls'
 import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact, PipelineArg } from '@/types'
+import EditIcon from '@/assets/icons/edit.svg?component'
+import HistoryIcon from '@/assets/icons/history.svg?component'
+import SlidersIcon from '@/assets/icons/sliders.svg?component'
+import TrashIcon from '@/assets/icons/trash.svg?component'
+import RerunIcon from '@/assets/icons/rerun.svg?component'
+import MaximizeIcon from '@/assets/icons/maximize.svg?component'
+import FileLinesIcon from '@/assets/icons/file-lines.svg?component'
+import EyeIcon from '@/assets/icons/eye.svg?component'
+import PencilIcon from '@/assets/icons/pencil.svg?component'
 
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
@@ -616,33 +625,16 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
               </span>
               <div class="header-actions">
                 <IconButton title="Edit pipeline in the definitions editor" @click.stop="editPipelineInDefinitions(pl.definition)">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
+                  <EditIcon width="15" height="15" />
                 </IconButton>
                 <IconButton :active="expandedPipeline === pl.name" title="Run history" @click.stop="toggleExpand(pl.name)">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 4v6h6" />
-                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    <polyline points="12 7 12 12 15 14" />
-                  </svg>
+                  <HistoryIcon width="15" height="15" />
                 </IconButton>
                 <IconButton title="Edit env args" @click.stop="openArgsEditor(pl.name)">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
-                    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
-                    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
-                    <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
-                  </svg>
+                  <SlidersIcon width="15" height="15" />
                 </IconButton>
                 <IconButton variant="danger" title="Delete pipeline" @click.stop="deleteTarget = pl.name">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6M14 11v6" />
-                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                  </svg>
+                  <TrashIcon width="15" height="15" />
                 </IconButton>
               </div>
             </div>
@@ -680,10 +672,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                     title="Rerun from this stage (new run, preceding stages kept)"
                     @click.stop="rerunStageAsNew(pl.name, index, $event)"
                   >
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M23 4v6h-6" />
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                    </svg>
+                    <RerunIcon width="13" height="13" />
                   </button>
                 </div>
               </template>
@@ -723,7 +712,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                   title="View pipeline.md as it was for this run"
                   @click="viewPipelineMdSnapshot(pl.name, run, $event)"
                 >
-                  <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="1.5" width="9" height="11" rx="1" /><line x1="4.5" y1="4.5" x2="9.5" y2="4.5" /><line x1="4.5" y1="7" x2="9.5" y2="7" /><line x1="4.5" y1="9.5" x2="7.5" y2="9.5" /></svg>
+                  <FileLinesIcon width="11" height="11" />
                   pipeline.md
                 </button>
                 <span class="run-time">{{ formatTime(run.started_at) }}</span>
@@ -789,7 +778,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                     title="View SKILL.md as it was for this run"
                     @click="viewSkillSnapshot"
                   >
-                    <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1 7s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" /><circle cx="7" cy="7" r="1.6" /></svg>
+                    <EyeIcon width="12" height="12" />
                     View at run time
                   </button>
                   <button
@@ -797,7 +786,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                     title="Edit this skill in the definitions editor"
                     @click="editSkillInDefinitions((stageDetail.defStage?.skill || stageDetail.record?.skill) as string)"
                   >
-                    <svg viewBox="0 0 14 14" width="12" height="12"><path d="M9.5 2.5l2 2L5 11l-2.5.5L3 9l6.5-6.5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
+                    <PencilIcon width="12" height="12" />
                     Edit skill
                   </button>
                 </div>
@@ -899,9 +888,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                       <button class="media-thumb" title="Fill browser viewport" @click="openImage(art)">
                         <img :src="art.url" :alt="art.name" loading="lazy" />
                         <span class="media-expand">
-                          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" />
-                          </svg>
+                          <MaximizeIcon width="15" height="15" />
                         </span>
                       </button>
                       <div class="artifact-caption">
@@ -919,9 +906,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                           title="Fill browser viewport"
                           @click="videoOverlay = { url: art.url!, name: art.name }"
                         >
-                          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" />
-                          </svg>
+                          <MaximizeIcon width="15" height="15" />
                         </button>
                       </div>
                       <div class="artifact-caption">

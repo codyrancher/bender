@@ -6,6 +6,7 @@ import { useUiStore } from '@/stores/ui'
 import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute } from '@/router'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 import Spinner from './primitives/Spinner.vue'
+import PlayIcon from '@/assets/icons/play.svg?component'
 
 const route = useRoute()
 const router = useRouter()
@@ -266,9 +267,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
         <div class="not-running-container">
           <span class="not-running-message">Dev environment is not running</span>
           <button class="start-btn" @click="handleHarnessStart">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+            <PlayIcon />
             Start Dev Environment
           </button>
         </div>
@@ -304,9 +303,7 @@ window.addEventListener('message', handleVscodeOpenUrl)
         <div class="not-running-container">
           <span class="not-running-message">Container is not running</span>
           <button class="start-btn" @click="handleStart">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+            <PlayIcon />
             Start Container
           </button>
         </div>

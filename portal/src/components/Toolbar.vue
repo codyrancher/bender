@@ -6,6 +6,14 @@ import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute } from '@/router'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
+import ExternalLinkIcon from '@/assets/icons/external-link.svg?component'
+import GlobeIcon from '@/assets/icons/globe.svg?component'
+import CloseIcon from '@/assets/icons/close.svg?component'
+import SplitIcon from '@/assets/icons/split.svg?component'
+import RefreshIcon from '@/assets/icons/refresh.svg?component'
+import StopIcon from '@/assets/icons/stop.svg?component'
+import PlayIcon from '@/assets/icons/play.svg?component'
+import SpinnerIcon from '@/assets/icons/spinner.svg?component'
 
 const route = useRoute()
 const router = useRouter()
@@ -137,9 +145,7 @@ async function handleHarnessAbandon() {
         </template>
         <template v-else-if="harnessOperationActive">
           <button class="toolbar-btn text-btn" disabled>
-            <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-            </svg>
+            <SpinnerIcon class="spinner" />
             Working...
           </button>
         </template>
@@ -165,11 +171,7 @@ async function handleHarnessAbandon() {
             VSCode
           </RouterLink>
           <button class="tab-external" title="Open in new tab" @click="openVscodeNewTab">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
+            <ExternalLinkIcon />
           </button>
         </div>
         <div v-if="pipelineId && browserPort" class="tab-wrapper" :class="{ active: viewMode === 'browser' || viewMode === 'split' }">
@@ -177,11 +179,7 @@ async function handleHarnessAbandon() {
             Browser
           </RouterLink>
           <button class="tab-external" title="Open in new tab" @click="openBrowserNewTab">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
+            <ExternalLinkIcon />
           </button>
         </div>
       </div>
@@ -193,19 +191,13 @@ async function handleHarnessAbandon() {
             title="Port forwarding"
             @click="toggleForwardForm"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
+            <GlobeIcon />
           </button>
           <div v-if="showForwardForm" class="forward-dropdown">
             <div v-for="fwd in pipelineForwards" :key="fwd.publicPort" class="forward-row">
               <span class="forward-label">:{{ fwd.publicPort }} → :{{ fwd.localPort }}</span>
               <button class="btn-icon" title="Stop" @click="pipelinesStore.stopPortForward(fwd.publicPort)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <CloseIcon />
               </button>
             </div>
             <div v-if="loadingOptions" class="forward-loading">Loading ports...</div>
@@ -230,10 +222,7 @@ async function handleHarnessAbandon() {
           title="Split view"
           @click="toggleSplit"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <line x1="12" y1="3" x2="12" y2="21" />
-          </svg>
+          <SplitIcon />
         </button>
         <button
           v-if="pipelineId && isRunning"
@@ -241,12 +230,7 @@ async function handleHarnessAbandon() {
           title="Reprovision sidecars"
           @click="handleReprovision"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2v6h-6" />
-            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-            <path d="M3 22v-6h6" />
-            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-          </svg>
+          <RefreshIcon />
         </button>
         <button
           class="toolbar-btn icon-btn"
@@ -258,15 +242,9 @@ async function handleHarnessAbandon() {
           :title="isStarting ? 'Starting...' : isStopping ? 'Stopping...' : isRunning ? 'Stop container' : 'Start container'"
           @click="handleToggleProject"
         >
-          <svg v-if="isBusy" class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="32" />
-          </svg>
-          <svg v-else-if="isRunning" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="1" />
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          <SpinnerIcon v-if="isBusy" class="spinner" />
+          <StopIcon v-else-if="isRunning" />
+          <PlayIcon v-else />
         </button>
       </div>
     </template>

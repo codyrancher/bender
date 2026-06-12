@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import FileTextIcon from '@/assets/icons/file-text.svg?component'
 
 const termEl = ref<HTMLDivElement | null>(null)
 const status = ref<'connecting' | 'open' | 'closed'>('connecting')
@@ -326,12 +327,7 @@ onBeforeUnmount(() => {
       <span class="status" :class="status">{{ status }}</span>
       <span v-if="uploading" class="upload-badge">uploading...</span>
       <button class="md-btn" title="Edit CLAUDE.md" @click="openEditor">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="9" y1="13" x2="15" y2="13" />
-          <line x1="9" y1="17" x2="15" y2="17" />
-        </svg>
+        <FileTextIcon />
         <span>CLAUDE.md</span>
       </button>
     </div>

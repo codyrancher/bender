@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import svgLoader from 'vite-svg-loader'
 import { resolve } from 'path'
 import fs from 'fs'
 
@@ -12,7 +13,10 @@ const httpsConfig = fs.existsSync(`${certDir}/cert.pem`) && fs.existsSync(`${cer
   : undefined
 
 export default defineConfig({
-  plugins: [vue()],
+  // svgo:false keeps our hand-authored icons intact (preserves viewBox +
+  // stroke/fill="currentColor"). Import icons with `?component`, e.g.
+  //   import EditIcon from '@/assets/icons/edit.svg?component'
+  plugins: [vue(), svgLoader({ svgo: false })],
   base: process.env.VITE_BASE || '/',
   resolve: {
     alias: {

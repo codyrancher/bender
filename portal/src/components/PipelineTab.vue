@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { usePipelinesStore } from '@/stores/pipelines'
 import type { Pipeline, ViewMode } from '@/types'
+import DeleteIcon from '@/assets/icons/delete.svg?component'
 
 const props = defineProps<{
   pipeline: Pipeline
@@ -46,11 +47,7 @@ function handleDragEnd() {
       title="Delete pipeline"
       @click.prevent.stop="uiStore.openDeletePipelineModal(pipeline.name)"
     >
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-        <path d="M3 4h10M6 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M4 4v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4" />
-        <line x1="6.5" y1="7" x2="6.5" y2="11" />
-        <line x1="9.5" y1="7" x2="9.5" y2="11" />
-      </svg>
+      <DeleteIcon />
     </span>
   </RouterLink>
 </template>

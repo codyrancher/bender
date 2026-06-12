@@ -7,6 +7,7 @@ import type { Pipeline, PipelineGroup, ViewMode } from '@/types'
 import blankIcon from '@/assets/icons/blank.svg'
 import vueIcon from '@/assets/icons/vue.svg'
 import rancherIcon from '@/assets/icons/rancher.svg'
+import PlusIcon from '@/assets/icons/plus.svg?component'
 
 // Maps group ID to template ID for the new project modal
 const GROUP_TEMPLATE_MAP: Record<string, string | undefined> = {
@@ -85,10 +86,7 @@ const groupIconSrc = computed(() => {
         title="New pipeline"
         @click.stop="uiStore.openNewPipelineModal(GROUP_TEMPLATE_MAP[groupId])"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
+        <PlusIcon />
       </button>
     </button>
     <div v-if="isExpanded" class="group-projects">

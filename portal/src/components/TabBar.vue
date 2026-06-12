@@ -4,6 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import { useUiStore } from '@/stores/ui'
 import Button from './primitives/Button.vue'
+import GridIcon from '@/assets/icons/grid.svg?component'
+import BookIcon from '@/assets/icons/book.svg?component'
+import SettingsIcon from '@/assets/icons/settings.svg?component'
+import TerminalIcon from '@/assets/icons/terminal.svg?component'
 
 const route = useRoute()
 const router = useRouter()
@@ -83,12 +87,7 @@ onUnmounted(() => {
         title="Pipelines"
         @click="router.push('/')"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="7" height="7" rx="1" />
-          <rect x="14" y="3" width="7" height="7" rx="1" />
-          <rect x="3" y="14" width="7" height="7" rx="1" />
-          <rect x="14" y="14" width="7" height="7" rx="1" />
-        </svg>
+        <GridIcon />
       </button>
       <button
         class="bottom-icon-btn"
@@ -96,10 +95,7 @@ onUnmounted(() => {
         title="Pipeline Definitions"
         @click="router.push('/definitions')"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
-          <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
-        </svg>
+        <BookIcon />
       </button>
       <button
         class="bottom-icon-btn"
@@ -107,10 +103,7 @@ onUnmounted(() => {
         title="Settings"
         @click="router.push('/settings')"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-        </svg>
+        <SettingsIcon />
       </button>
     </div>
 
@@ -122,10 +115,7 @@ onUnmounted(() => {
       title="Terminal (global Claude CLI)"
       @click="ui.toggleTerminal()"
     >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="4 17 10 11 4 5" />
-        <line x1="12" y1="19" x2="20" y2="19" />
-      </svg>
+      <TerminalIcon />
     </button>
 
     <div v-if="systemStats" class="system-stats">
