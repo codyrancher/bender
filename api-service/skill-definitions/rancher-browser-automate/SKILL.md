@@ -88,6 +88,34 @@ beats) are **deliberate pacing**, not the flaky state-waits the golden rule
 forbids — keep those. The off-camera login/navigation should still wait on state
 (reuse `loginAsAdmin` / `waitForReady` from `./lib.mjs`).
 
+## Comparison screenshots (before/after, side-by-side)
+
+`compare.mjs` produces a single labeled side-by-side PNG (BEFORE = master vs
+AFTER = the fix branch) with header bars, URLs, and **red highlight rectangles**
+around the changed elements — the thing that makes a diff readable. Every
+comparison MUST pass at least one `--highlight` selector.
+
+Both pages must be reachable and **logged in** first — `login.mjs` against each
+base establishes the session cookies in the shared browser context, then compare:
+
+```bash
+A=.claude/skills/rancher-browser-automate
+node $A/login.mjs https://localhost:8005          # dev (after) — and the stock host for before
+node $A/compare.mjs \
+  --before-url "https://$RANCHER_HOST_NAME/dashboard/c/local/explorer/<resource>" \
+  --after-url  "https://localhost:8005/dashboard/c/local/explorer/<resource>" \
+  --before-label master --after-label "$(git rev-parse --abbrev-ref HEAD)" \
+  --highlight '<css-of-the-changed-element>' \
+  --wait-for  '<css-that-signals-loaded>' \
+  --output "$STAGE_ARTIFACTS/comparison.png"
+```
+
+`--wait-for` is important for the dev server (HMR keeps `networkidle` from ever
+resolving). Use `--path <page>` with `$COMPARISON_BEFORE_URL`/`$COMPARISON_AFTER_URL`
+env vars to avoid repeating the base. Run `node $A/compare.mjs` with no args (or
+read its header) for the full flag list. Then `Read` the output PNG to confirm the
+red outlines landed on the changed elements.
+
 ## Conventions
 
 - **Base URL:** `$RANCHER_BASE` or `$DEV_SERVER` (default `https://localhost:8005`, the

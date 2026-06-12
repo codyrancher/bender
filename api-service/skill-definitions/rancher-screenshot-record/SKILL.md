@@ -14,5 +14,5 @@ Capture a still image that shows the bug.
    node /workspace/browser.mjs --new-tab goto https://{{projectName}}-rancher
    node /workspace/browser.mjs screenshot /workspace/screenshots/before-fix.png
    ```
-4. For a labeled before/after later, use the comparison helper (see `my-browser-screenshot-comparison`) once the fix branch exists.
+4. For a labeled before/after later, use the comparison helper `.claude/skills/rancher-browser-automate/compare.mjs` (see the `rancher-browser-automate` skill) once the fix branch exists.
 5. Save under `/workspace/screenshots/` and note the path in `/workspace/repro-notes.md`.
