@@ -171,13 +171,13 @@ async function handleCreate() {
   }
 }
 
-// A stage can be re-run (as a new run, seeded from preceding stages) only when
-// the latest run actually settled in a failed/cancelled state — i.e. there's a
-// concrete run to copy the earlier stages from and nothing is in flight.
+// A stage can be re-run (as a new run, seeded from preceding stages) once the
+// latest run has settled — completed, failed, or cancelled. There's a concrete
+// run to copy the earlier stages from and nothing is in flight.
 function canRerunStages(pipeline: string): boolean {
   if (isRunActive(pipeline)) return false
   const s = latestRun(pipeline)?.status
-  return s === 'failed' || s === 'cancelled'
+  return s === 'completed' || s === 'failed' || s === 'cancelled'
 }
 
 // Pipelines whose rerun-from-stage we've just kicked off (prevents double-fire
