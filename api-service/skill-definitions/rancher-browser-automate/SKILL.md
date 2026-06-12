@@ -1,12 +1,12 @@
 ---
-name: rancher-browser-actions
-description: Reusable, composable browser-automation primitives for driving the Rancher dashboard (log in as admin, go to the cluster explorer, navigate + wait for a view to render, screenshot). Library skill — other stage skills reuse these instead of re-deriving navigation. Not a pipeline stage.
+name: rancher-browser-automate
+description: Reusable, composable browser-automation scripts for driving the Rancher dashboard (log in as admin, go to the cluster explorer, navigate + wait for a view to render, screenshot). Library skill — other stage skills reuse these instead of re-deriving navigation. Not a pipeline stage.
 ---
 
-A small library of **composable browser actions** so stage skills don't re-derive
-login/navigation by hand (that hand-rolling is what makes stages flail and time
-out). This skill is materialized into every workspace at
-`.claude/skills/rancher-browser-actions/` even though it's not a pipeline stage.
+A small library of **composable browser-automation scripts** so stage skills don't
+re-derive login/navigation by hand (that hand-rolling is what makes stages flail
+and time out). This skill is materialized into every workspace at
+`.claude/skills/rancher-browser-automate/` even though it's not a pipeline stage.
 
 ## Golden rule: wait for state, never for the clock
 
@@ -23,7 +23,7 @@ Run them in the **foreground** (their stdout is the result; never background +
 chain:
 
 ```bash
-A=.claude/skills/rancher-browser-actions
+A=.claude/skills/rancher-browser-automate
 
 # 1) Log in as admin (idempotent). Default base = dev server (:8005);
 #    pass https://$RANCHER_HOST_NAME for the stock instance.
