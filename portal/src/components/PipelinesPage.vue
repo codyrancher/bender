@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { api } from '@/services/api'
+import type { GithubAuthStatus } from '@/services/api'
 import EditorModal from './EditorModal.vue'
 import DiffViewer from './DiffViewer.vue'
 import FileViewer from './FileViewer.vue'
@@ -255,6 +256,14 @@ async function toggleRun(pipeline: string, e: Event) {
       authModal.value = { pipeline, code: '', loading: false, error: '' }
       return
     }
+    // Soft-gate on a GitHub browser session (needed only by upload/PR stages, so
+    // it's a warning the user can run past — not a hard block like Claude).
+    const gh = await api.getGithubAuth(pipeline)
+    if (!gh.authenticated) {
+      setStarting(pipeline, false)
+      githubAuthModal.value = { pipeline, loading: false, error: '', status: gh }
+      return
+    }
     await startRun(pipeline)
   } catch {
     // leave it to the next poll/fetch to reflect reality
@@ -305,6 +314,65 @@ async function submitLoginCode() {
   } finally {
     if (authModal.value) authModal.value.loading = false
   }
+}
+
+// --- GitHub browser-session gate (for uploading media to the PR) ---
+const githubAuthModal = ref<{ pipeline: string; loading: boolean; error: string; status: GithubAuthStatus } | null>(null)
+
+function githubSyncedAgo(updatedAt?: number): string {
+  if (!updatedAt) return ''
+  const secs = Math.max(0, Math.round((Date.now() - updatedAt) / 1000))
+  if (secs < 60) return `${secs}s ago`
+  if (secs < 3600) return `${Math.round(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.round(secs / 3600)}h ago`
+  return `${Math.round(secs / 86400)}d ago`
+}
+
+// Open the project's sidecar browser in a new tab so the user can sign in to
+// GitHub there, then come back and "Capture session".
+function openSidecarBrowserForLogin() {
+  const m = githubAuthModal.value
+  if (!m) return
+  const port = pipelinesStore.getPipelineBrowserPort(m.pipeline)
+  if (!port) {
+    m.error = 'Browser sidecar isn’t running yet — start a run (or the sidecar) first, sign in to github.com there, then capture.'
+    return
+  }
+  const url = getBrowserUrl(m.pipeline, port, pipelinesStore.getPipelineBrowserHost(m.pipeline))
+  window.open(url, '_blank', 'noopener')
+}
+
+async function recheckGithubAuth() {
+  const m = githubAuthModal.value
+  if (!m) return
+  m.loading = true; m.error = ''
+  try { m.status = await api.getGithubAuth(m.pipeline) }
+  catch (e) { m.error = e instanceof Error ? e.message : 'Check failed' }
+  finally { if (githubAuthModal.value) githubAuthModal.value.loading = false }
+}
+
+async function captureGithubSession() {
+  const m = githubAuthModal.value
+  if (!m) return
+  m.loading = true; m.error = ''
+  try {
+    const status = await api.captureGithubSession(m.pipeline)
+    m.status = status
+    if (!status.authenticated && status.reason) m.error = status.reason
+  } catch (e) {
+    m.error = e instanceof Error ? e.message : 'Could not capture the session'
+  } finally {
+    if (githubAuthModal.value) githubAuthModal.value.loading = false
+  }
+}
+
+// Proceed with the run despite a missing/uncertain GitHub session.
+async function runAnywayWithoutGithub() {
+  const m = githubAuthModal.value
+  if (!m) return
+  const pipeline = m.pipeline
+  githubAuthModal.value = null
+  await startRun(pipeline)
 }
 
 function formatSize(bytes?: number): string {
@@ -1116,6 +1184,47 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         >
           {{ authModal.loading ? 'Signing in…' : 'Complete sign-in & run' }}
         </button>
+      </template>
+    </Modal>
+
+    <!-- GitHub browser-session gate -->
+    <Modal v-if="githubAuthModal" title="GitHub session not detected" :subtitle="githubAuthModal.pipeline" @close="!githubAuthModal.loading && (githubAuthModal = null)">
+      <div class="modal-pad">
+        <p class="auth-desc">
+          Stages that upload screenshots or videos to a PR/issue do it through a
+          <strong>logged-in GitHub browser session</strong> in the sidecar — not a token
+          (GitHub has no API for user-attachments). The rest of the run works without it;
+          only the upload/PR steps need it.
+        </p>
+        <div class="gh-status" :class="{ ok: githubAuthModal.status.authenticated }">
+          <span class="gh-dot"></span>
+          <template v-if="githubAuthModal.status.authenticated">
+            Session present{{ githubAuthModal.status.login ? ` — signed in as ${githubAuthModal.status.login}` : '' }}
+            <span v-if="githubAuthModal.status.updatedAt" class="gh-meta">· synced {{ githubSyncedAgo(githubAuthModal.status.updatedAt) }}</span>
+          </template>
+          <template v-else>
+            No active GitHub login in the synced session
+          </template>
+        </div>
+        <ol class="auth-steps">
+          <li>Sign in to <strong>github.com</strong> in your browser with the bender extension active (it auto-syncs the session), <em>or</em></li>
+          <li><a href="#" @click.prevent="openSidecarBrowserForLogin">Open the sidecar browser ↗</a>, sign in to github.com there, then <strong>Capture session</strong> below.</li>
+        </ol>
+        <div v-if="githubAuthModal.error" class="auth-error">{{ githubAuthModal.error }}</div>
+      </div>
+      <template #footer>
+        <button class="modal-btn cancel" :disabled="githubAuthModal.loading" @click="githubAuthModal = null">Cancel</button>
+        <button class="modal-btn" :disabled="githubAuthModal.loading" @click="recheckGithubAuth">
+          {{ githubAuthModal.loading ? 'Checking…' : 'Re-check' }}
+        </button>
+        <button class="modal-btn" :disabled="githubAuthModal.loading" @click="captureGithubSession">Capture session</button>
+        <button
+          v-if="githubAuthModal.status.authenticated"
+          class="modal-btn create"
+          :disabled="githubAuthModal.loading"
+          @click="runAnywayWithoutGithub"
+        >Run</button>
+        <button v-else class="modal-btn" :disabled="githubAuthModal.loading" @click="runAnywayWithoutGithub">Run anyway</button>
       </template>
     </Modal>
 
@@ -2507,6 +2616,28 @@ a.artifact-row:hover,
 }
 .auth-code:focus { border-color: var(--color-accent); }
 .auth-error { margin-top: 10px; padding: 8px 12px; color: var(--color-error); font-size: 12px; background: rgba(232, 88, 88, 0.08); border-radius: 6px; }
+
+.gh-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-element);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+}
+.gh-status .gh-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-error);
+  flex-shrink: 0;
+}
+.gh-status.ok .gh-dot { background: var(--color-status-running); }
+.gh-meta { color: var(--color-text-muted); margin-left: 2px; }
 
 .modal-btn {
   padding: 8px 18px;

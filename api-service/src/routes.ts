@@ -2769,6 +2769,155 @@ export function registerRoutes(app: Express): void {
     }
   });
 
+  // ── GitHub session gate ─────────────────────────────────────────────────────
+  // Uploading screenshots/videos to a PR/issue (user-attachments) happens through
+  // a logged-in GitHub *browser session*, not a token — GitHub has no PAT/API path
+  // for user-attachments. The session is the cookie snapshot that gets injected
+  // into the sidecar browser on start. This gate lets the UI verify a usable
+  // session exists before a run (mirroring the Claude-auth gate) and capture one
+  // straight from the running sidecar browser after a manual sign-in.
+
+  // Does the stored snapshot contain an active GitHub login?
+  function checkGithubAuth(): { authenticated: boolean; login?: string; updatedAt?: number; count?: number; reason?: string } {
+    let snap: any;
+    try { snap = JSON.parse(fs.readFileSync(COOKIE_SNAPSHOT_PATH, 'utf-8')); }
+    catch { return { authenticated: false, reason: 'No GitHub session has been synced yet.' }; }
+    const cookies: any[] = Array.isArray(snap.cookies) ? snap.cookies : [];
+    const isGh = (c: any) => String(c.domain || '').replace(/^\./, '').endsWith('github.com');
+    const now = Date.now() / 1000;
+    const live = (c: any) => !c.expirationDate || c.expirationDate > now;
+    const gh = cookies.filter(isGh);
+    const session = gh.find(c => c.name === 'user_session' && live(c));
+    const loggedIn = gh.find(c => c.name === 'logged_in' && String(c.value).toLowerCase() === 'yes' && live(c));
+    const user = gh.find(c => c.name === 'dotcom_user');
+    const authenticated = !!(session || loggedIn);
+    return {
+      authenticated,
+      login: user?.value,
+      updatedAt: snap.updatedAt,
+      count: snap.count ?? cookies.length,
+      reason: authenticated ? undefined : 'No active GitHub login found in the synced session — sign in to github.com (with the bender browser extension) or sign in via the sidecar browser and capture it.',
+    };
+  }
+
+  // Read all cookies out of the running sidecar browser via CDP
+  // (Network.getAllCookies), using the same raw-WS bridge as the inject path.
+  function readCookiesFromSidecar(project: string): { ok: boolean; cookies?: any[]; error?: string } {
+    const containerName = `${COMPOSE_PROJECT}-${project}-1`;
+    if (getContainerStatus(containerName) !== 'running') {
+      return { ok: false, error: 'Project container is not running' };
+    }
+    const script = `
+      const http = require('http');
+      const crypto = require('crypto');
+      function get(url) {
+        return new Promise((resolve, reject) => {
+          http.get(url, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); }).on('error', reject);
+        });
+      }
+      function rawWsSend(wsUrl, message) {
+        return new Promise((resolve, reject) => {
+          const u = new URL(wsUrl);
+          const key = crypto.randomBytes(16).toString('base64');
+          const req = http.request({ hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, method: 'GET',
+            headers: { 'Upgrade': 'websocket', 'Connection': 'Upgrade', 'Sec-WebSocket-Key': key, 'Sec-WebSocket-Version': '13' } });
+          req.on('upgrade', (res, socket) => {
+            const payload = Buffer.from(message);
+            const mask = crypto.randomBytes(4);
+            let header;
+            if (payload.length < 126) { header = Buffer.alloc(6); header[0] = 0x81; header[1] = 0x80 | payload.length; mask.copy(header, 2); }
+            else if (payload.length < 65536) { header = Buffer.alloc(8); header[0] = 0x81; header[1] = 0x80 | 126; header.writeUInt16BE(payload.length, 2); mask.copy(header, 4); }
+            else { header = Buffer.alloc(14); header[0] = 0x81; header[1] = 0x80 | 127; header.writeBigUInt64BE(BigInt(payload.length), 2); mask.copy(header, 10); }
+            const masked = Buffer.alloc(payload.length);
+            for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
+            socket.write(Buffer.concat([header, masked]));
+            let buf = Buffer.alloc(0);
+            socket.on('data', chunk => {
+              buf = Buffer.concat([buf, chunk]);
+              if (buf.length < 2) return;
+              let offset = 2; let len = buf[1] & 0x7f;
+              if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); offset = 4; }
+              else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); offset = 10; }
+              if (buf.length < offset + len) return;
+              const data = buf.slice(offset, offset + len).toString();
+              socket.destroy();
+              try { resolve(JSON.parse(data)); } catch { resolve(data); }
+            });
+            socket.on('error', reject);
+          });
+          req.on('error', reject);
+          req.end();
+        });
+      }
+      (async () => {
+        const targets = await get('http://localhost:9222/json');
+        const page = targets.find(t => t.type === 'page');
+        if (!page || !page.webSocketDebuggerUrl) throw new Error('No page target in CDP');
+        const result = await rawWsSend(page.webSocketDebuggerUrl, JSON.stringify({ id: 1, method: 'Network.getAllCookies' }));
+        const cookies = (result && result.result && result.result.cookies) || [];
+        console.log(JSON.stringify({ cookies }));
+      })().catch(e => { console.error(JSON.stringify({ error: e.message })); process.exit(1); });
+    `.trim();
+
+    const result = spawnSync('docker', ['exec', containerName, 'node', '-e', script], { encoding: 'utf-8', timeout: 30_000 });
+    if (result.status !== 0) {
+      return { ok: false, error: (result.stderr || result.stdout || '').trim() || 'CDP read failed' };
+    }
+    try {
+      const parsed = JSON.parse(result.stdout.trim());
+      if (parsed.error) return { ok: false, error: parsed.error };
+      return { ok: true, cookies: parsed.cookies || [] };
+    } catch {
+      return { ok: false, error: 'Could not parse cookies from CDP' };
+    }
+  }
+
+  // Convert CDP cookies (Network.getAllCookies) into the snapshot/CookieParam
+  // shape readCookieSnapshot/toCdpCookies expect, so they round-trip on re-inject.
+  function cdpToSnapshotCookies(cdp: any[]): CookieParam[] {
+    const sameSiteRev: Record<string, string> = { None: 'no_restriction', Lax: 'lax', Strict: 'strict' };
+    return cdp.map(c => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path || '/',
+      secure: !!c.secure,
+      httpOnly: !!c.httpOnly,
+      sameSite: sameSiteRev[c.sameSite] || 'lax',
+      ...(typeof c.expires === 'number' && c.expires > 0 ? { expirationDate: c.expires } : {}),
+    })) as CookieParam[];
+  }
+
+  app.get('/api/pipelines/:name/github-auth', (_req: Request, res: Response) => {
+    try { res.json(checkGithubAuth()); }
+    catch (err) { res.status(500).json({ error: String(err) }); }
+  });
+
+  // Capture the GitHub session straight from the project's running sidecar
+  // browser (after the user signs in there) and persist it as the snapshot, so
+  // it survives sidecar restarts and is what future runs inject.
+  app.post('/api/pipelines/:name/github-auth/capture', (req: Request, res: Response) => {
+    try {
+      const project = req.params.name;
+      const read = readCookiesFromSidecar(project);
+      if (!read.ok) {
+        return res.status(502).json({ error: read.error || 'Could not read cookies from the sidecar browser', ...checkGithubAuth() });
+      }
+      const ghCdp = (read.cookies || []).filter(c => String(c.domain || '').replace(/^\./, '').endsWith('github.com'));
+      if (!ghCdp.length) {
+        return res.status(200).json({ authenticated: false, reason: 'The sidecar browser has no github.com cookies yet — sign in to github.com there first, then capture.' });
+      }
+      const cookies = cdpToSnapshotCookies(ghCdp);
+      try {
+        fs.mkdirSync(path.dirname(COOKIE_SNAPSHOT_PATH), { recursive: true });
+        fs.writeFileSync(COOKIE_SNAPSHOT_PATH, JSON.stringify({ updatedAt: Date.now(), count: cookies.length, cookies }));
+      } catch { /* persistence failure is non-fatal */ }
+      res.json(checkGithubAuth());
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // --- Template editor (VS Code container for editing template files) ---
 
   function generateTemplateClaudeMd(templateId: string, meta: TemplateMeta | null): string {
