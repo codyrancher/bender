@@ -189,6 +189,36 @@ async function startRunDirect(pipeline: string) {
   await fetchRuns(pipeline)
 }
 
+// A stage can be re-run (as a new run, seeded from preceding stages) only when
+// the latest run actually settled in a failed/cancelled state — i.e. there's a
+// concrete run to copy the earlier stages from and nothing is in flight.
+function canRerunStages(pipeline: string): boolean {
+  if (isRunActive(pipeline)) return false
+  const s = latestRun(pipeline)?.status
+  return s === 'failed' || s === 'cancelled'
+}
+
+// Pipelines whose rerun-from-stage we've just kicked off (prevents double-fire
+// while the new run record is being fetched).
+const rerunningStage = ref<Set<string>>(new Set())
+
+async function rerunStageAsNew(pipeline: string, stageIndex: number, e: Event) {
+  e.stopPropagation()
+  const run = latestRun(pipeline)
+  if (!run || rerunningStage.value.has(pipeline)) return
+  const next = new Set(rerunningStage.value); next.add(pipeline); rerunningStage.value = next
+  setStarting(pipeline, true)
+  try {
+    await api.rerunStageAsNewRun(pipeline, run.id, stageIndex)
+    await fetchRuns(pipeline)
+  } catch (err) {
+    uiStore.showToast(err instanceof Error ? err.message : 'Rerun failed', 'error')
+  } finally {
+    setStarting(pipeline, false)
+    const n = new Set(rerunningStage.value); n.delete(pipeline); rerunningStage.value = n
+  }
+}
+
 function isRunActive(pipeline: string): boolean {
   return latestRun(pipeline)?.status === 'running' || startingRuns.value.has(pipeline)
 }
@@ -659,6 +689,17 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                     class="criteria-check"
                     title="Success criteria met"
                   >✓</div>
+                  <button
+                    v-if="canRerunStages(pl.name) && displayStages(pl.name)[index]"
+                    class="stage-rerun-btn"
+                    title="Rerun from this stage (new run, preceding stages kept)"
+                    @click.stop="rerunStageAsNew(pl.name, index, $event)"
+                  >
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M23 4v6h-6" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                  </button>
                 </div>
               </template>
             </PipelineGraph>
@@ -1588,6 +1629,39 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
   font-weight: 700;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* Rerun-from-this-stage affordance — only rendered when the latest run
+   failed/cancelled. Sits in the top-right corner of the stage card. */
+.stage-rerun-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-bg-element);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s, transform 0.15s;
+  z-index: 3;
+}
+
+.node-stage:hover .stage-rerun-btn {
+  opacity: 1;
+}
+
+.stage-rerun-btn:hover {
+  color: var(--color-status-running);
+  border-color: var(--color-status-running);
+  background: var(--color-bg-element-hover);
+  transform: rotate(-30deg);
 }
 
 /* Connector */

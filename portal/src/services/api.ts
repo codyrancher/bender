@@ -449,6 +449,15 @@ export const api = {
     })
   },
 
+  // Rerun starting at a stage as a brand-new run: preceding stages are copied
+  // from the source run, execution begins at this stage against its restored
+  // workspace snapshot. Leaves the source run intact as history.
+  async rerunStageAsNewRun(pipeline: string, runId: number, stageIndex: number): Promise<{ run: PipelineRun }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/stages/${stageIndex}/rerun-new`, {
+      method: 'POST',
+    })
+  },
+
   async cancelPipelineRun(pipeline: string, runId: number): Promise<{ run: PipelineRun }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs/${runId}/cancel`, { method: 'POST' })
   },

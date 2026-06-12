@@ -2147,6 +2147,113 @@ export function registerRoutes(app: Express): void {
     }
   });
 
+  // Rerun the pipeline starting at a particular stage as a brand-new run. The
+  // preceding stages are copied verbatim from the source run (their status,
+  // logs, artifacts, timing) so they read as already-done, and execution begins
+  // at the chosen stage. The workspace is restored to that stage's start-of-run
+  // snapshot from the source run, while stage definitions for the remaining
+  // stages are re-synced from the CURRENT pipeline.md / skills (so edits take
+  // effect). The source run is left untouched as history.
+  app.post('/api/pipelines/:name/runs/:runId/stages/:stageIndex/rerun-new', (req: Request, res: Response) => {
+    try {
+      const db = getRunsDb();
+      const pipeline = req.params.name;
+      const srcRunId = Number(req.params.runId);
+      const idx = parseInt(req.params.stageIndex);
+
+      const pipelineDir = path.join(PIPELINES_DIR, pipeline);
+      if (!fs.existsSync(pipelineDir)) return res.status(404).json({ error: 'Pipeline not found' });
+
+      const srcRecords = db.prepare(
+        'SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index'
+      ).all(srcRunId) as any[];
+      if (!srcRecords.length) return res.status(404).json({ error: 'Source run not found' });
+
+      const stages = readPipelineStages(pipeline);
+      if (!stages.length) return res.status(400).json({ error: 'Pipeline has no stages defined' });
+      if (idx < 0 || idx >= stages.length) return res.status(400).json({ error: 'Stage index out of range' });
+
+      // A new run supersedes any run still in flight for this pipeline.
+      cancelActiveRunsForPipeline(pipeline);
+
+      // Restore the workspace to the chosen stage's start-of-run snapshot from
+      // the source run (keeps the current/edited pipeline.md + skills).
+      const restored = restoreWorkspace(pipeline, srcRunId, idx);
+
+      const srcByIndex = new Map<number, any>(srcRecords.map(r => [r.stage_index, r]));
+
+      let pipelineMdSnapshot = '';
+      try {
+        const mdPath = path.join(pipelineDir, 'pipeline.md');
+        if (fs.existsSync(mdPath)) pipelineMdSnapshot = fs.readFileSync(mdPath, 'utf-8');
+      } catch { /* ignore */ }
+
+      const now = new Date().toISOString();
+      const runResult = db.prepare(
+        'INSERT INTO pipeline_runs (pipeline, status, started_at, pipeline_md, pipeline_uid) VALUES (?, ?, ?, ?, ?)'
+      ).run(pipeline, 'running', now, pipelineMdSnapshot, pipelineUid(pipeline));
+      const newRunId = Number(runResult.lastInsertRowid);
+
+      const insertStage = db.prepare(
+        `INSERT INTO pipeline_stage_records
+           (run_id, stage_index, stage_name, skill, status, started_at, completed_at, duration_ms,
+            error, success_criteria, success_criteria_met, logs, artifacts, skill_md, next_indices)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+
+      const insertMany = db.transaction(() => {
+        stages.forEach((stage, i) => {
+          // next_indices always come from the CURRENT definition so the graph
+          // (predecessors/successors) stays internally consistent.
+          const nextIndices = JSON.stringify(stage.next);
+          const src = srcByIndex.get(i);
+          if (i < idx && src) {
+            // Preceding stage: replay its prior execution verbatim.
+            insertStage.run(
+              newRunId, i, src.stage_name, src.skill, src.status,
+              src.started_at, src.completed_at, src.duration_ms, src.error,
+              src.success_criteria, src.success_criteria_met, src.logs, src.artifacts,
+              src.skill_md, nextIndices,
+            );
+          } else {
+            // Chosen stage and everything after: fresh, synced from current defs.
+            let skillMd = '';
+            try {
+              const sp = resolveSkillPath(pipeline, stage.skill);
+              if (sp && fs.existsSync(sp)) skillMd = fs.readFileSync(sp, 'utf-8');
+            } catch { /* ignore */ }
+            insertStage.run(
+              newRunId, i, stage.name, stage.skill, 'pending',
+              null, null, null, null,
+              stage.successCriteria || null, 0, null, null,
+              skillMd, nextIndices,
+            );
+          }
+        });
+      });
+      insertMany();
+
+      if (!restored) {
+        // No snapshot for this stage (older run) — note it; the stage still runs,
+        // just against the current workspace rather than the captured state.
+        try {
+          const cur = db.prepare('SELECT logs FROM pipeline_stage_records WHERE run_id = ? AND stage_index = ?').get(newRunId, idx) as any;
+          db.prepare('UPDATE pipeline_stage_records SET logs = ? WHERE run_id = ? AND stage_index = ?')
+            .run(`[note] No saved snapshot for this stage in the source run — running against the current workspace.\n${cur?.logs || ''}`, newRunId, idx);
+        } catch { /* ignore */ }
+      }
+
+      broadcast('pipeline-run-changed', { pipeline, runId: newRunId });
+      startExecution(newRunId, pipeline);
+
+      const run = db.prepare('SELECT *, (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = pipeline_runs.pipeline AND r2.pipeline_uid IS pipeline_runs.pipeline_uid AND r2.id <= pipeline_runs.id) AS run_number FROM pipeline_runs WHERE id = ?').get(newRunId);
+      const stageRecords = db.prepare('SELECT * FROM pipeline_stage_records WHERE run_id = ? ORDER BY stage_index').all(newRunId);
+      res.json({ run: { ...run as any, stages: stageRecords } });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // --- Pipeline.md & skill editing ---
 
   app.get('/api/pipelines/:name/pipeline-md', (req: Request, res: Response) => {
