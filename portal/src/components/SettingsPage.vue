@@ -260,10 +260,13 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow-y: auto;
   background: var(--color-bg-primary);
+  /* Shared column width — Settings + Insights line up in one centered column. */
+  --content-width: 1000px;
 }
 
-/* Insights lives full-width at the bottom of Settings (its table is wide). */
 .insights-wrap {
+  max-width: var(--content-width);
+  margin: 0 auto;
   padding: var(--spacing-xl) var(--spacing-lg) var(--spacing-xxl);
   border-top: var(--border-width-sm) solid var(--color-border-dark);
 }
@@ -275,7 +278,7 @@ onBeforeUnmount(() => {
 }
 
 .settings-content {
-  max-width: 700px;
+  max-width: var(--content-width);
   margin: 0 auto;
   padding: var(--spacing-xl) var(--spacing-lg);
 }
