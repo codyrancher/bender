@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { api } from '@/services/api'
 import type { GithubAuthStatus } from '@/services/api'
-import EditorModal from './EditorModal.vue'
 import DiffViewer from './DiffViewer.vue'
 import FileViewer from './FileViewer.vue'
 import ViewportOverlay from './ViewportOverlay.vue'
@@ -15,6 +15,7 @@ import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact, Pipelin
 
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
+const router = useRouter()
 
 const definitions = ref<Array<{ id: string; name: string; stages?: PipelineStage[]; skills?: string[]; args?: PipelineArg[] }>>([])
 const showNewModal = ref(false)
@@ -68,21 +69,6 @@ async function confirmDelete() {
     deleting.value = false
   }
 }
-
-const mdEditor = ref<{ pipeline: string; content: string; claude: string } | null>(null)
-// Declared pipeline args + working/baseline values for the editor's "env args" tab.
-interface ArgDef { name: string; description: string; required: boolean; default: string; value: string }
-const editArgDefs = ref<ArgDef[]>([])
-const editArgValues = ref<Record<string, string>>({})
-const editArgOriginal = ref<Record<string, string>>({})
-const editArgsDirty = computed(() => JSON.stringify(editArgValues.value) !== JSON.stringify(editArgOriginal.value))
-const skillEditor = ref<{
-  pipeline: string
-  skill: string
-  stageIndex: number
-  runId: number | null
-  content: string
-} | null>(null)
 
 async function loadDefinitions() {
   try {
@@ -183,11 +169,6 @@ async function handleCreate() {
   } finally {
     creating.value = false
   }
-}
-
-async function startRunDirect(pipeline: string) {
-  await api.createPipelineRun(pipeline)
-  await fetchRuns(pipeline)
 }
 
 // A stage can be re-run (as a new run, seeded from preceding stages) only when
@@ -382,84 +363,14 @@ function formatSize(bytes?: number): string {
   return bytes + ' B'
 }
 
-// --- pipeline.md editor ---
-
-async function openMdEditor(pipeline: string) {
-  try {
-    const [md, claude, args] = await Promise.all([
-      api.getPipelineMd(pipeline),
-      api.getPipelineClaudeMd(pipeline),
-      api.getPipelineArgs(pipeline),
-    ])
-    editArgDefs.value = args.args
-    const vals: Record<string, string> = {}
-    for (const a of args.args) vals[a.name] = a.value
-    editArgValues.value = vals
-    editArgOriginal.value = { ...vals }
-    mdEditor.value = { pipeline, content: md.content, claude: claude.content }
-  } catch {}
+// Editing skills/pipelines happens in the Definitions editor pages (richer
+// multi-file editor + validation + history); the Edit buttons route there.
+function editSkillInDefinitions(skill: string) {
+  if (skill) router.push('/definitions/skills/' + skill)
 }
-
-async function saveMd(content: string) {
-  if (!mdEditor.value) return
-  await api.savePipelineMd(mdEditor.value.pipeline, content)
-  await pipelinesStore.fetchPipelines()
+function editPipelineInDefinitions(pipeline: string) {
+  router.push('/definitions/pipelines/' + pipeline)
 }
-
-async function saveClaude(content: string) {
-  if (!mdEditor.value) return
-  await api.savePipelineClaudeMd(mdEditor.value.pipeline, content)
-}
-
-async function saveArgs() {
-  if (!mdEditor.value) return
-  await api.savePipelineArgs(mdEditor.value.pipeline, editArgValues.value)
-  editArgOriginal.value = { ...editArgValues.value }
-}
-
-async function rerunFromMd(value: string) {
-  if (!mdEditor.value) return
-  if (value === 'pipeline') {
-    await startRunDirect(mdEditor.value.pipeline)
-  }
-}
-
-// --- skill editor ---
-
-async function openSkillEditor(pipeline: string, skill: string, stageIndex: number, runId: number | null) {
-  try {
-    const data = await api.getSkill(pipeline, skill)
-    skillEditor.value = { pipeline, skill, stageIndex, runId, content: data.content }
-  } catch {}
-}
-
-async function saveSkill(content: string) {
-  if (!skillEditor.value) return
-  await api.saveSkill(skillEditor.value.pipeline, skillEditor.value.skill, content)
-}
-
-async function rerunFromSkill(value: string) {
-  const se = skillEditor.value
-  if (!se) return
-  if ((value === 'stage' || value === 'stage-snapshot') && se.runId !== null) {
-    await api.rerunStage(se.pipeline, se.runId, se.stageIndex, { fromSnapshot: value === 'stage-snapshot' })
-    await fetchRuns(se.pipeline)
-  } else if (value === 'pipeline') {
-    await startRunDirect(se.pipeline)
-  }
-}
-
-const skillRerunOptions = computed(() => {
-  const se = skillEditor.value
-  if (!se) return []
-  const opts: Array<{ label: string; value: string; hint?: string }> = []
-  if (se.runId !== null) {
-    opts.push({ label: 'Rerun this stage from saved state', value: 'stage-snapshot', hint: "Restore the workspace to this stage's start, with your edited skill" })
-    opts.push({ label: 'Rerun this stage', value: 'stage', hint: 'Re-execute against the current workspace' })
-  }
-  opts.push({ label: 'Rerun pipeline', value: 'pipeline', hint: 'Start a fresh run from the beginning' })
-  return opts
-})
 
 function selectStage(pipeline: string, stageIndex: number, runId: number | null) {
   selectedStage.value = { pipeline, stageIndex, runId }
@@ -694,8 +605,8 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
               <div class="header-actions">
                 <button
                   class="icon-btn"
-                  title="Edit pipeline.md"
-                  @click.stop="openMdEditor(pl.name)"
+                  title="Edit pipeline in the definitions editor"
+                  @click.stop="editPipelineInDefinitions(pl.name)"
                 >
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -885,12 +796,8 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                   </button>
                   <button
                     class="btn-edit-skill"
-                    @click="openSkillEditor(
-                      stageDetail.pipeline,
-                      (stageDetail.defStage?.skill || stageDetail.record?.skill) as string,
-                      stageDetail.stageIndex,
-                      stageDetail.run?.id ?? null,
-                    )"
+                    title="Edit this skill in the definitions editor"
+                    @click="editSkillInDefinitions((stageDetail.defStage?.skill || stageDetail.record?.skill) as string)"
                   >
                     <svg viewBox="0 0 14 14" width="12" height="12"><path d="M9.5 2.5l2 2L5 11l-2.5.5L3 9l6.5-6.5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" /></svg>
                     Edit skill
@@ -1232,53 +1139,6 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
         <button v-else class="modal-btn" :disabled="githubAuthModal.loading" @click="runAnywayWithoutGithub">Run anyway</button>
       </template>
     </Modal>
-
-    <!-- pipeline.md editor -->
-    <EditorModal
-      v-if="mdEditor"
-      title="Edit pipeline"
-      :subtitle="mdEditor.pipeline"
-      :tabs="[
-        { key: 'pipeline', label: 'pipeline.md', content: mdEditor.content, placeholder: '# Pipeline\n\n## Stages\n\n### 1. Stage Name\n**Skill:** skill-name\n**Success Criteria:** ...\nDescription', onSave: saveMd },
-        { key: 'claude', label: 'CLAUDE.md', content: mdEditor.claude, placeholder: '# Project instructions for the agent at run time…', onSave: saveClaude },
-        { key: 'args', label: 'env args', custom: true, dirty: editArgsDirty, onSaveCustom: saveArgs },
-      ]"
-      :rerun-options="[{ label: 'Rerun pipeline', value: 'pipeline', hint: 'Start a fresh run with the new definition' }]"
-      :on-rerun="rerunFromMd"
-      @close="mdEditor = null"
-    >
-      <template #args>
-        <div class="args-tab">
-          <p v-if="!editArgDefs.length" class="args-empty">This pipeline declares no args.</p>
-          <div v-for="a in editArgDefs" :key="a.name" class="args-row">
-            <div class="args-label">
-              <span class="args-name">{{ a.name }}<span v-if="a.required" class="args-req">*</span></span>
-              <span v-if="a.description" class="args-desc">{{ a.description }}</span>
-            </div>
-            <input
-              v-model="editArgValues[a.name]"
-              class="args-input"
-              spellcheck="false"
-              :placeholder="a.default ? `default: ${a.default}` : ''"
-            />
-          </div>
-          <p class="args-note">Saved values are passed as environment variables to future runs of this pipeline.</p>
-        </div>
-      </template>
-    </EditorModal>
-
-    <!-- skill editor -->
-    <EditorModal
-      v-if="skillEditor"
-      title="Edit skill"
-      :subtitle="`${skillEditor.pipeline} · ${skillEditor.skill}`"
-      :content="skillEditor.content"
-      placeholder="---&#10;name: skill-name&#10;description: ...&#10;---&#10;&#10;Instructions for this skill"
-      :rerun-options="skillRerunOptions"
-      :on-save="saveSkill"
-      :on-rerun="rerunFromSkill"
-      @close="skillEditor = null"
-    />
 
     <!-- local diff viewer (GitHub-PR style) -->
     <DiffViewer
@@ -2692,68 +2552,4 @@ a.artifact-row:hover,
   cursor: not-allowed;
 }
 
-/* env args tab (custom slot in EditorModal) */
-.args-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 100%;
-}
-
-.args-empty {
-  color: var(--color-text-muted);
-  font-size: 13px;
-  margin: 0;
-}
-
-.args-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.args-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.args-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-}
-
-.args-req {
-  color: var(--color-error);
-  margin-left: 2px;
-}
-
-.args-desc {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.args-input {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  color: var(--color-text-primary);
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 13px;
-  padding: 9px 12px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.args-input:focus {
-  border-color: var(--color-accent);
-}
-
-.args-note {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin: 4px 0 0;
-}
 </style>
