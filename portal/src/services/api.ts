@@ -334,17 +334,6 @@ export const api = {
     })
   },
 
-  async getInsightsNotes(key: string): Promise<{ content: string; updated_at: string | null }> {
-    return fetchJSON(`${API_BASE}/insights/notes/${key}`)
-  },
-
-  async saveInsightsNotes(key: string, content: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/insights/notes/${key}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
-  },
 
   async uploadImage(pipeline: string, base64Data: string, filename: string): Promise<UploadResponse> {
     return fetchJSON(`${API_BASE}/upload/${pipeline}`, {

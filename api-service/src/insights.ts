@@ -22,11 +22,6 @@ function getDb(): Database.Database {
         recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
         notes TEXT
       );
-      CREATE TABLE IF NOT EXISTS insights_notes (
-        key TEXT PRIMARY KEY,
-        content TEXT NOT NULL DEFAULT '',
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
     `);
   }
   return db;
@@ -107,27 +102,6 @@ export function registerInsightsRoutes(router: Router): void {
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
-  });
-
-  // Get notes
-  router.get('/api/insights/notes/:key', (req: Request, res: Response) => {
-    const db = getDb();
-    const row = db.prepare('SELECT content, updated_at FROM insights_notes WHERE key = ?').get(req.params.key) as { content: string; updated_at: string } | undefined;
-    res.json({ content: row?.content || '', updated_at: row?.updated_at || null });
-  });
-
-  // Save notes (upsert)
-  router.put('/api/insights/notes/:key', (req: Request, res: Response) => {
-    const db = getDb();
-    const { content } = req.body;
-    if (typeof content !== 'string') {
-      return res.status(400).json({ error: 'content is required' });
-    }
-    db.prepare(
-      `INSERT INTO insights_notes (key, content, updated_at) VALUES (?, ?, datetime('now'))
-       ON CONFLICT(key) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`
-    ).run(req.params.key, content);
-    res.json({ status: 'ok' });
   });
 
   // Record a missing tool

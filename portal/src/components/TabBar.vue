@@ -62,7 +62,6 @@ async function runPrune() {
 
 const isHome = computed(() => route.name === 'home')
 const isDefinitions = computed(() => route.name === 'definitions')
-const isInsights = computed(() => route.name === 'insights')
 const isSettings = computed(() => route.name === 'settings')
 
 onMounted(() => {
@@ -100,18 +99,6 @@ onUnmounted(() => {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
           <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
-        </svg>
-      </button>
-      <button
-        class="bottom-icon-btn"
-        :class="{ active: isInsights }"
-        title="Insights"
-        @click="router.push('/insights')"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="20" x2="18" y2="10" />
-          <line x1="12" y1="20" x2="12" y2="4" />
-          <line x1="6" y1="20" x2="6" y2="14" />
         </svg>
       </button>
       <button

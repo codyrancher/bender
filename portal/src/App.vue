@@ -12,7 +12,6 @@ import Toast from '@/components/Toast.vue'
 import DropOverlay from '@/components/DropOverlay.vue'
 import NewPipelineModal from '@/components/NewPipelineModal.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
-import InsightsPage from '@/components/InsightsPage.vue'
 import TerminalDrawer from '@/components/TerminalDrawer.vue'
 import PipelinesPage from '@/components/PipelinesPage.vue'
 import DefinitionsBrowser from '@/components/DefinitionsBrowser.vue'
@@ -24,7 +23,6 @@ const uiStore = useUiStore()
 
 const isHome = computed(() => route.name === 'home')
 const isSettings = computed(() => route.name === 'settings')
-const isInsights = computed(() => route.name === 'insights')
 const isDefinitions = computed(() => route.name === 'definitions')
 
 watch(
@@ -47,7 +45,7 @@ onMounted(async () => {
     uiStore.hideLoading()
   } else if (pipelineId) {
     await pipelinesStore.loadPipeline(pipelineId)
-  } else if (route.name === 'settings' || route.name === 'insights' || route.name === 'definitions') {
+  } else if (route.name === 'settings' || route.name === 'definitions') {
     uiStore.hideLoading()
   } else {
     uiStore.hideLoading()
@@ -58,12 +56,11 @@ onMounted(async () => {
 <template>
   <div class="main-content">
     <PipelinesPage v-if="isHome" />
-    <div v-show="!isHome && !isSettings && !isInsights && !isDefinitions" class="iframe-pane">
+    <div v-show="!isHome && !isSettings && !isDefinitions" class="iframe-pane">
       <Toolbar />
       <IFrameContainer />
     </div>
     <SettingsPage v-if="isSettings" />
-    <InsightsPage v-if="isInsights" />
     <DefinitionsBrowser v-if="isDefinitions" @close="router.push('/')" />
   </div>
   <TerminalDrawer />

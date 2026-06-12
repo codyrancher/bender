@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { marked } from 'marked'
 import { api } from '@/services/api'
 import Tabs from './primitives/Tabs.vue'
 
@@ -54,30 +53,6 @@ async function deleteSelected() {
   deleting.value = false
 }
 
-// Notes
-const notesContent = ref('')
-const notesPreview = ref(false)
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-
-const renderedNotes = computed(() => {
-  if (!notesContent.value.trim()) return '<p style="color: var(--color-text-muted)">Nothing here yet.</p>'
-  return marked(notesContent.value) as string
-})
-
-function onNotesInput() {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    api.saveInsightsNotes('default', notesContent.value)
-  }, 500)
-}
-
-async function loadNotes() {
-  try {
-    const result = await api.getInsightsNotes('default')
-    notesContent.value = result.content
-  } catch {}
-}
-
 // Table browser
 async function loadTables() {
   try {
@@ -129,17 +104,11 @@ watch(page, () => {
 
 onMounted(() => {
   loadTables()
-  loadNotes()
 })
 </script>
 
 <template>
-  <div class="insights-page">
-    <div class="insights-header">
-      <h1>Insights</h1>
-    </div>
-
-    <div class="insights-content">
+  <div class="insights-panel">
       <div class="top-half">
       <!-- SQL Query -->
       <div class="query-section">
@@ -240,59 +209,16 @@ onMounted(() => {
       </div>
 
       </div>
-      <!-- Notes -->
-      <div class="notes-section">
-        <div class="notes-header">
-          <span class="query-header">Notes</span>
-          <button class="notes-toggle" :class="{ active: notesPreview }" @click="notesPreview = !notesPreview">
-            {{ notesPreview ? 'Edit' : 'Preview' }}
-          </button>
-        </div>
-        <div v-if="notesPreview" class="notes-preview markdown-body" v-html="renderedNotes" />
-        <textarea
-          v-else
-          v-model="notesContent"
-          class="notes-editor"
-          placeholder="Write notes here (Markdown supported)..."
-          @input="onNotesInput"
-        />
-      </div>
-    </div>
   </div>
 </template>
 
 <style scoped>
-.insights-page {
+.insights-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-}
-
-.insights-header {
-  padding: var(--spacing-lg) var(--spacing-xl);
-  border-bottom: var(--border-width-sm) solid var(--color-border-dark);
-  flex-shrink: 0;
-}
-
-.insights-header h1 {
-  font-size: var(--font-size-lg);
-  font-weight: 600;
-}
-
-.insights-content {
-  flex: 1;
-  overflow: hidden;
-  padding: var(--spacing-lg) var(--spacing-xl);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
 }
 
 .top-half {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl);
@@ -436,7 +362,7 @@ onMounted(() => {
 }
 
 .table-scroll {
-  flex: 1;
+  max-height: 420px;
   overflow: auto;
 }
 
@@ -507,140 +433,4 @@ onMounted(() => {
   text-align: center;
 }
 
-/* Notes section */
-.notes-section {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.notes-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--spacing-sm);
-}
-
-.notes-header .query-header {
-  margin-bottom: 0;
-}
-
-.notes-toggle {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  padding: 2px 10px;
-  cursor: pointer;
-  font-size: var(--font-size-xs);
-  font-family: inherit;
-}
-
-.notes-toggle:hover {
-  color: var(--color-text-hover);
-}
-
-.notes-toggle.active {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-}
-
-.notes-editor {
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-  background: var(--color-bg-element);
-  color: var(--color-text-primary);
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-md);
-  font-family: monospace;
-  font-size: var(--font-size-sm);
-  resize: vertical;
-  box-sizing: border-box;
-}
-
-.notes-editor::placeholder {
-  color: var(--color-text-muted);
-}
-
-.notes-preview {
-  flex: 1;
-  min-height: 0;
-  background: var(--color-bg-element);
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-md);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-primary);
-  line-height: 1.6;
-  overflow-y: auto;
-}
-
-.notes-preview :deep(h1),
-.notes-preview :deep(h2),
-.notes-preview :deep(h3) {
-  margin-top: 0.8em;
-  margin-bottom: 0.4em;
-  font-weight: 600;
-}
-
-.notes-preview :deep(h1) { font-size: 1.3em; }
-.notes-preview :deep(h2) { font-size: 1.15em; }
-.notes-preview :deep(h3) { font-size: 1em; }
-
-.notes-preview :deep(p) {
-  margin: 0.4em 0;
-}
-
-.notes-preview :deep(ul),
-.notes-preview :deep(ol) {
-  padding-left: 1.5em;
-  margin: 0.4em 0;
-}
-
-.notes-preview :deep(code) {
-  background: var(--color-bg-secondary);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-
-.notes-preview :deep(pre) {
-  background: var(--color-bg-secondary);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-  margin: 0.5em 0;
-}
-
-.notes-preview :deep(pre code) {
-  background: none;
-  padding: 0;
-}
-
-.notes-preview :deep(a) {
-  color: var(--color-accent);
-}
-
-.notes-preview :deep(blockquote) {
-  border-left: 3px solid var(--color-border-dark);
-  padding-left: var(--spacing-md);
-  color: var(--color-text-muted);
-  margin: 0.5em 0;
-}
-
-.notes-preview :deep(table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 0.5em 0;
-}
-
-.notes-preview :deep(th),
-.notes-preview :deep(td) {
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  text-align: left;
-}
 </style>
