@@ -35,26 +35,33 @@ let pollTimer: ReturnType<typeof setInterval> | undefined
 const deleteTarget = ref<string | null>(null)
 const deleting = ref(false)
 
-const pushTarget = ref<{ pipeline: string; definitionId: string; message: string } | null>(null)
-const pushing = ref(false)
+// Edit this pipeline INSTANCE's env arg values (declared via the pipeline's
+// "## Args" section, persisted to .bender.json, passed to runs as env vars).
+interface ArgDef { name: string; description: string; required: boolean; default: string; value: string }
+const argsEditor = ref<{ pipeline: string; defs: ArgDef[]; values: Record<string, string>; saving: boolean; error: string } | null>(null)
 
-function openPush(pipeline: string) {
-  pushTarget.value = { pipeline, definitionId: pipeline, message: `Update ${pipeline} definition` }
+async function openArgsEditor(pipeline: string) {
+  try {
+    const a = await api.getPipelineArgs(pipeline)
+    const values: Record<string, string> = {}
+    for (const d of a.args) values[d.name] = d.value
+    argsEditor.value = { pipeline, defs: a.args, values, saving: false, error: '' }
+  } catch (e) {
+    uiStore.showToast(e instanceof Error ? e.message : 'Failed to load args', 'error')
+  }
 }
 
-async function confirmPush() {
-  const t = pushTarget.value
-  if (!t || pushing.value || !t.definitionId.trim()) return
-  pushing.value = true
+async function saveArgsEditor() {
+  const ed = argsEditor.value
+  if (!ed || ed.saving) return
+  ed.saving = true; ed.error = ''
   try {
-    const r = await api.pushPipelineDefinition(t.pipeline, t.definitionId.trim(), t.message.trim())
-    await loadDefinitions()
-    pushTarget.value = null
-    uiStore.showToast(`Pushed "${r.id}" (${r.skillCount} skill${r.skillCount === 1 ? '' : 's'}) to definitions`, 'success')
+    await api.savePipelineArgs(ed.pipeline, ed.values)
+    argsEditor.value = null
   } catch (err) {
-    uiStore.showToast(err instanceof Error ? err.message : 'Push failed', 'error')
+    ed.error = err instanceof Error ? err.message : 'Save failed'
   } finally {
-    pushing.value = false
+    if (argsEditor.value) argsEditor.value.saving = false
   }
 }
 
@@ -627,11 +634,14 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
                 </button>
                 <button
                   class="icon-btn"
-                  title="Push to definitions repo"
-                  @click.stop="openPush(pl.name)"
+                  title="Edit env args"
+                  @click.stop="openArgsEditor(pl.name)"
                 >
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 19V6" /><path d="M5 12l7-7 7 7" /><path d="M5 21h14" />
+                    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
                   </svg>
                 </button>
                 <button
@@ -987,25 +997,31 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
       </template>
     </Modal>
 
-    <!-- Push to definitions -->
-    <Modal v-if="pushTarget" title="Push to definitions" :subtitle="pushTarget.pipeline" @close="!pushing && (pushTarget = null)">
+    <!-- Edit env args (this pipeline instance) -->
+    <Modal v-if="argsEditor" title="Edit env args" :subtitle="argsEditor.pipeline" @close="!argsEditor.saving && (argsEditor = null)">
       <div class="modal-pad">
-        <p class="confirm-text" style="margin-bottom: 14px;">
-          Commits this pipeline's <strong>pipeline.md</strong> and its referenced <strong>SKILL.md</strong> files to the global definitions repo. Subsequent pipelines can be created from it.
-        </p>
-        <div class="form-group">
-          <label>Definition id</label>
-          <input v-model="pushTarget.definitionId" type="text" placeholder="my-definition" />
+        <p v-if="!argsEditor.defs.length" class="confirm-text">This pipeline declares no args.</p>
+        <div v-else class="args-form">
+          <div v-for="d in argsEditor.defs" :key="d.name" class="args-row">
+            <div class="args-label">
+              <span class="args-name">{{ d.name }}<span v-if="d.required" class="args-req">*</span></span>
+              <span v-if="d.description" class="args-desc">{{ d.description }}</span>
+            </div>
+            <input
+              v-model="argsEditor.values[d.name]"
+              class="args-input"
+              spellcheck="false"
+              :placeholder="d.default ? `default: ${d.default}` : ''"
+            />
+          </div>
+          <p class="args-note">Saved values are passed as environment variables to future runs of this pipeline.</p>
         </div>
-        <div class="form-group">
-          <label>Commit message</label>
-          <input v-model="pushTarget.message" type="text" @keydown.enter="confirmPush" />
-        </div>
+        <div v-if="argsEditor.error" class="auth-error">{{ argsEditor.error }}</div>
       </div>
       <template #footer>
-        <button class="modal-btn cancel" :disabled="pushing" @click="pushTarget = null">Cancel</button>
-        <button class="modal-btn create" :disabled="pushing || !pushTarget.definitionId.trim()" @click="confirmPush">
-          {{ pushing ? 'Pushing...' : 'Push' }}
+        <button class="modal-btn cancel" :disabled="argsEditor.saving" @click="argsEditor = null">Cancel</button>
+        <button v-if="argsEditor.defs.length" class="modal-btn create" :disabled="argsEditor.saving" @click="saveArgsEditor">
+          {{ argsEditor.saving ? 'Saving…' : 'Save' }}
         </button>
       </template>
     </Modal>
@@ -2551,5 +2567,31 @@ a.artifact-row:hover,
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* env args editor */
+.args-form { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+.args-row { display: flex; flex-direction: column; gap: 6px; }
+.args-label { display: flex; flex-direction: column; gap: 2px; }
+.args-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+.args-req { color: var(--color-error); margin-left: 2px; }
+.args-desc { font-size: 12px; color: var(--color-text-muted); }
+.args-input {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.args-input:focus { border-color: var(--color-accent); }
+.args-note { font-size: 12px; color: var(--color-text-muted); margin: 4px 0 0; }
 
 </style>

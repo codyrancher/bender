@@ -5,6 +5,7 @@ import { api } from '@/services/api'
 import DiffViewer from './DiffViewer.vue'
 import PipelineGraph from './PipelineGraph.vue'
 import Tabs from './Tabs.vue'
+import Modal from './Modal.vue'
 import SkillDefinitionsPanel from './SkillDefinitionsPanel.vue'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -37,6 +38,46 @@ const diffInitial = ref(0)
 
 const creating = ref(false)
 const newId = ref('')
+
+// Import a definition from a running pipeline instance — pushes that pipeline's
+// current pipeline.md + referenced skills into the definitions repo. (Relocated
+// here from the pipeline card's old "push to definitions" button.)
+const importModal = ref<{ instances: string[]; pipeline: string; definitionId: string; message: string; saving: boolean; error: string } | null>(null)
+
+async function openImport() {
+  importModal.value = { instances: [], pipeline: '', definitionId: '', message: '', saving: false, error: '' }
+  try {
+    const r = await api.getPipelines()
+    const instances = r.pipelines.map(p => p.name)
+    const first = instances[0] || ''
+    importModal.value = { instances, pipeline: first, definitionId: first, message: first ? `Update ${first} definition` : '', saving: false, error: '' }
+  } catch (e) {
+    if (importModal.value) importModal.value.error = e instanceof Error ? e.message : 'Failed to load pipelines'
+  }
+}
+
+function onPickImportPipeline() {
+  const m = importModal.value
+  if (!m) return
+  m.definitionId = m.pipeline
+  m.message = `Update ${m.pipeline} definition`
+}
+
+async function confirmImport() {
+  const m = importModal.value
+  if (!m || m.saving || !m.pipeline || !m.definitionId.trim()) return
+  m.saving = true; m.error = ''
+  try {
+    await api.pushPipelineDefinition(m.pipeline, m.definitionId.trim(), m.message.trim())
+    await load()
+    importModal.value = null
+    router.push('/definitions/pipelines/' + m.definitionId.trim())
+  } catch (err) {
+    m.error = err instanceof Error ? err.message : 'Import failed'
+  } finally {
+    if (importModal.value) importModal.value.saving = false
+  }
+}
 
 // pipeline.md editor working copy + global skill availability
 const editMd = ref('')
@@ -331,6 +372,7 @@ function jumpToStage(index: number) {
         <div class="defs-create">
           <input v-model="newId" placeholder="new-definition-id" @keydown.enter="createDefinition" />
           <button class="defs-create-btn" :disabled="creating || !newId.trim()" @click="createDefinition">+ Create</button>
+          <button class="defs-create-btn alt" title="Import a running pipeline's pipeline.md + skills as a definition" @click="openImport">↑ From pipeline</button>
         </div>
       </div>
 
@@ -477,6 +519,46 @@ function jumpToStage(index: number) {
     :initial-index="diffInitial"
     @close="diffOpen = false"
   />
+
+  <!-- Import a definition from a running pipeline instance -->
+  <Modal
+    v-if="importModal"
+    title="Import from pipeline"
+    subtitle="Push a pipeline's current pipeline.md + skills into a definition"
+    @close="!importModal.saving && (importModal = null)"
+  >
+    <div class="imp-pad">
+      <p v-if="!importModal.instances.length && !importModal.error" class="imp-empty">No pipelines available to import from.</p>
+      <template v-else>
+        <div class="imp-group">
+          <label>Pipeline</label>
+          <select v-model="importModal.pipeline" @change="onPickImportPipeline">
+            <option v-for="i in importModal.instances" :key="i" :value="i">{{ i }}</option>
+          </select>
+        </div>
+        <div class="imp-group">
+          <label>Definition id</label>
+          <input v-model="importModal.definitionId" type="text" placeholder="my-definition" spellcheck="false" />
+        </div>
+        <div class="imp-group">
+          <label>Commit message</label>
+          <input v-model="importModal.message" type="text" @keydown.enter="confirmImport" />
+        </div>
+      </template>
+      <div v-if="importModal.error" class="imp-error">{{ importModal.error }}</div>
+    </div>
+    <template #footer>
+      <button class="modal-btn cancel" :disabled="importModal.saving" @click="importModal = null">Cancel</button>
+      <button
+        v-if="importModal.instances.length"
+        class="modal-btn create"
+        :disabled="importModal.saving || !importModal.definitionId.trim()"
+        @click="confirmImport"
+      >
+        {{ importModal.saving ? 'Importing…' : 'Import' }}
+      </button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped>
@@ -610,6 +692,27 @@ function jumpToStage(index: number) {
 
 .defs-create-btn:hover:not(:disabled) { background: var(--color-accent); color: var(--color-text-bright); }
 .defs-create-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.defs-create-btn.alt { border-color: var(--color-border-medium); color: var(--color-text-muted); }
+.defs-create-btn.alt:hover:not(:disabled) { background: var(--color-bg-element); color: var(--color-text-hover); border-color: var(--color-text-muted); }
+
+/* import-from-pipeline modal content */
+.imp-pad { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.imp-empty { font-size: 13px; color: var(--color-text-muted); margin: 0; }
+.imp-group { display: flex; flex-direction: column; gap: 6px; }
+.imp-group label { font-size: 12px; font-weight: 600; color: var(--color-text-muted); }
+.imp-group input, .imp-group select {
+  padding: 8px 11px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+.imp-group input:focus, .imp-group select:focus { border-color: var(--color-accent); }
+.imp-error { padding: 8px 12px; color: var(--color-error); font-size: 12px; background: rgba(232, 88, 88, 0.08); border-radius: 6px; }
 
 .defs-detail {
   flex: 1;
