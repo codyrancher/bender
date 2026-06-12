@@ -563,7 +563,7 @@ function statusColor(status: string): string {
   if (status === 'running') return 'var(--color-status-running)'
   if (status === 'stopped' || status === 'failed') return 'var(--color-status-stopped)'
   if (status === 'completed') return 'var(--color-status-running)'
-  if (status === 'cancelled') return 'var(--color-text-muted)'
+  if (status === 'cancelled') return 'var(--color-warning)'
   return 'var(--color-status-default)'
 }
 
@@ -571,7 +571,8 @@ function stageStatusColor(status: string): string {
   if (status === 'running') return 'var(--color-status-running)'
   if (status === 'completed') return 'var(--color-status-running)'
   if (status === 'failed') return 'var(--color-error)'
-  if (status === 'skipped' || status === 'cancelled') return 'var(--color-text-muted)'
+  if (status === 'cancelled') return 'var(--color-warning)'
+  if (status === 'skipped') return 'var(--color-text-muted)'
   return 'var(--color-status-default)'
 }
 
@@ -1685,6 +1686,10 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
   border-color: var(--color-error);
 }
 
+.node-stage.cancelled {
+  border-color: var(--color-warning);
+}
+
 .stage-elapsed {
   flex-shrink: 0;
   min-width: 46px;
@@ -1878,7 +1883,7 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
 .run-status-text.completed { color: var(--color-status-running); }
 .run-status-text.failed { color: var(--color-error); }
 .run-status-text.pending { color: var(--color-status-default); }
-.run-status-text.cancelled { color: var(--color-text-muted); }
+.run-status-text.cancelled { color: var(--color-warning); }
 
 .run-time {
   font-size: 11px;
