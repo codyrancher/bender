@@ -1223,10 +1223,31 @@ export function registerRoutes(app: Express): void {
       // reused name doesn't inherit a previous pipeline's run history.
       if (!runCols.has('pipeline_uid')) runsDb.exec('ALTER TABLE pipeline_runs ADD COLUMN pipeline_uid TEXT');
 
-      // Any run/stage left 'running' belongs to a prior process — mark it cancelled
+      // Any run/stage left 'running' belongs to a prior process — mark it
+      // cancelled. Stages that had actually started get a frozen completed_at +
+      // duration so their elapsed timer stops (otherwise it ticks forever); ones
+      // that never started just flip status.
       runsDb.exec(`
-        UPDATE pipeline_stage_records SET status = 'cancelled' WHERE status IN ('running', 'pending') AND run_id IN (SELECT id FROM pipeline_runs WHERE status = 'running');
-        UPDATE pipeline_runs SET status = 'cancelled' WHERE status = 'running';
+        UPDATE pipeline_stage_records
+          SET status = 'cancelled',
+              completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+              duration_ms = CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER)
+          WHERE status IN ('running', 'pending') AND started_at IS NOT NULL AND duration_ms IS NULL
+            AND run_id IN (SELECT id FROM pipeline_runs WHERE status = 'running');
+        UPDATE pipeline_stage_records
+          SET status = 'cancelled'
+          WHERE status IN ('running', 'pending') AND started_at IS NULL
+            AND run_id IN (SELECT id FROM pipeline_runs WHERE status = 'running');
+        UPDATE pipeline_runs
+          SET status = 'cancelled', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE status = 'running';
+      `);
+      // Repair rows orphaned by an earlier build that lacked the freeze above.
+      runsDb.exec(`
+        UPDATE pipeline_stage_records
+          SET completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+              duration_ms = CAST((julianday('now') - julianday(started_at)) * 86400000 AS INTEGER)
+          WHERE status = 'cancelled' AND started_at IS NOT NULL AND duration_ms IS NULL;
       `);
     }
     return runsDb;

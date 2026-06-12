@@ -614,12 +614,16 @@ function runDuration(run: PipelineRun): string {
   return formatDuration(end - start)
 }
 
-// Live elapsed time for a stage: final duration once recorded, otherwise ticks from start
-function liveStageDuration(record: { started_at: string | null; completed_at: string | null; duration_ms: number | null }): string {
+// Live elapsed time for a stage: final duration once recorded, otherwise ticks
+// from start — but ONLY while actually running. A terminal stage (cancelled,
+// failed, etc.) must not keep ticking even if its duration was never recorded.
+function liveStageDuration(record: { status?: string; started_at: string | null; completed_at: string | null; duration_ms: number | null }): string {
   if (record.duration_ms !== null) return formatDuration(record.duration_ms)
   if (!record.started_at) return '—'
-  const end = record.completed_at ? new Date(record.completed_at).getTime() : now.value
-  return formatDuration(end - new Date(record.started_at).getTime())
+  if (record.status === 'running') return formatDuration(now.value - new Date(record.started_at).getTime())
+  if (record.completed_at) return formatDuration(new Date(record.completed_at).getTime() - new Date(record.started_at).getTime())
+  // Terminal but no recorded end (orphaned by a restart) — don't tick.
+  return '—'
 }
 
 function latestRun(pipeline: string): PipelineRun | null {
