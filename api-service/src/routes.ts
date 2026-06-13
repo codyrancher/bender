@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, renderString } from './services/templates';
 import { extractPipelineFlags } from './utils/pipelineFlags';
 import { broadcast } from './services/events';
-import { materializeInto as materializeDefinition, writeDefinition, getDefinition, parseArgs } from './routes/definitions';
+import { materializeInto as materializeDefinition, writeDefinition, getDefinition, parseArgs } from './services/definitions';
 
 import {
   PIPELINES_DIR, COMPOSE_PROJECT, CLAUDE_CONFIG_DIR, STAGE_TIMEOUT_MS, BENDER_IMAGE,
