@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
@@ -10,25 +10,17 @@ import FileViewer from '../components/primitives/FileViewer.vue'
 import ViewportOverlay from '../components/primitives/ViewportOverlay.vue'
 import Modal from '../components/primitives/Modal.vue'
 import Button from '../components/primitives/Button.vue'
-import IconButton from '../components/primitives/IconButton.vue'
-import PipelineGraph from '../components/PipelineGraph.vue'
+import PipelineCard from '../components/PipelineCard.vue'
+import StageDetailModal from '../components/StageDetailModal.vue'
 import { getBrowserUrl } from '@/services/urls'
-import type { PipelineStage, PipelineRun, PipelineStageRecord, Artifact, PipelineArg } from '@/types'
-import EditIcon from '@/assets/icons/edit.svg?component'
-import HistoryIcon from '@/assets/icons/history.svg?component'
-import SlidersIcon from '@/assets/icons/sliders.svg?component'
-import TrashIcon from '@/assets/icons/trash.svg?component'
-import RerunIcon from '@/assets/icons/rerun.svg?component'
-import MaximizeIcon from '@/assets/icons/maximize.svg?component'
-import FileLinesIcon from '@/assets/icons/file-lines.svg?component'
-import EyeIcon from '@/assets/icons/eye.svg?component'
-import PencilIcon from '@/assets/icons/pencil.svg?component'
+import { runNo } from '@/utils/pipelineFormat'
+import type { PipelineRun, Artifact, PipelineArg } from '@/types'
 
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 const router = useRouter()
 
-const definitions = ref<Array<{ id: string; name: string; stages?: PipelineStage[]; skills?: string[]; args?: PipelineArg[] }>>([])
+const definitions = ref<Array<{ id: string; name: string; stages?: any[]; skills?: string[]; args?: PipelineArg[] }>>([])
 const showNewModal = ref(false)
 const newName = ref('')
 const selectedDefinition = ref('')
@@ -189,21 +181,11 @@ async function handleCreate() {
   }
 }
 
-// A stage can be re-run (as a new run, seeded from preceding stages) once the
-// latest run has settled — completed, failed, or cancelled. There's a concrete
-// run to copy the earlier stages from and nothing is in flight.
-function canRerunStages(pipeline: string): boolean {
-  if (isRunActive(pipeline)) return false
-  const s = latestRun(pipeline)?.status
-  return s === 'completed' || s === 'failed' || s === 'cancelled'
-}
-
 // Pipelines whose rerun-from-stage we've just kicked off (prevents double-fire
 // while the new run record is being fetched).
 const rerunningStage = ref<Set<string>>(new Set())
 
-async function rerunStageAsNew(pipeline: string, stageIndex: number, e: Event) {
-  e.stopPropagation()
+async function rerunStageAsNew(pipeline: string, stageIndex: number) {
   const run = latestRun(pipeline)
   if (!run || rerunningStage.value.has(pipeline)) return
   const next = new Set(rerunningStage.value); next.add(pipeline); rerunningStage.value = next
@@ -217,15 +199,6 @@ async function rerunStageAsNew(pipeline: string, stageIndex: number, e: Event) {
     setStarting(pipeline, false)
     const n = new Set(rerunningStage.value); n.delete(pipeline); rerunningStage.value = n
   }
-}
-
-function isRunActive(pipeline: string): boolean {
-  return latestRun(pipeline)?.status === 'running' || startingRuns.value.has(pipeline)
-}
-
-// Per-pipeline run ordinal for display; falls back to the global id.
-function runNo(run: { run_number?: number; id: number }): number {
-  return run.run_number ?? run.id
 }
 
 function setStarting(pipeline: string, on: boolean) {
@@ -374,13 +347,6 @@ async function runAnywayWithoutGithub() {
   await startRun(pipeline)
 }
 
-function formatSize(bytes?: number): string {
-  if (bytes === undefined) return ''
-  if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB'
-  if (bytes >= 1e3) return (bytes / 1e3).toFixed(0) + ' KB'
-  return bytes + ' B'
-}
-
 // Editing skills/pipelines happens in the Definitions editor pages (richer
 // multi-file editor + validation + history); the Edit buttons route there.
 function editSkillInDefinitions(skill: string) {
@@ -388,35 +354,17 @@ function editSkillInDefinitions(skill: string) {
 }
 function editPipelineInDefinitions(definition?: string) {
   // Link to the definition this instance was created from — NOT the instance
-  // name (they often differ). If unknown, open the Pipelines definitions list
-  // rather than guessing a wrong/nonexistent id.
+  // name (they often differ). If unknown, open the Pipelines definitions list.
   router.push(definition ? '/definitions/pipelines/' + definition : '/definitions/pipelines')
 }
 
 function selectStage(pipeline: string, stageIndex: number, runId: number | null) {
   selectedStage.value = { pipeline, stageIndex, runId }
-  showLiveBrowser.value = false
 }
 
 function closeStageModal() {
   selectedStage.value = null
-  showLiveBrowser.value = false
 }
-
-// Live browser view: the agent drives the project's browser sidecar over CDP,
-// and that same browser streams its screen (Selkies) — so embedding the stream
-// shows the agent clicking/typing/navigating in real time.
-const showLiveBrowser = ref(false)
-const liveBrowserUrl = computed(() => {
-  const name = stageDetail.value?.pipeline
-  if (!name) return ''
-  const port = pipelinesStore.getPipelineBrowserPort(name)
-  if (!port) return ''
-  return getBrowserUrl(name, port, pipelinesStore.getPipelineBrowserHost(name))
-})
-const canWatchLiveBrowser = computed(() =>
-  !!liveBrowserUrl.value && stageDetail.value?.record?.status === 'running',
-)
 
 const stageDetail = computed(() => {
   const sel = selectedStage.value
@@ -433,29 +381,13 @@ const stageDetail = computed(() => {
   return { pipeline: sel.pipeline, stageIndex: sel.stageIndex, defStage, record, run }
 })
 
-const stageArtifacts = computed<Artifact[]>(() => {
-  const raw = stageDetail.value?.record?.artifacts
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-})
-
 const diffViewer = ref<{ commits: Artifact[]; index: number } | null>(null)
 const videoOverlay = ref<{ url: string; name: string } | null>(null)
 const fileViewer = ref<{ url: string; name: string; subtitle?: string } | null>(null)
 const imageOverlay = ref<{ url: string; name: string } | null>(null)
 
-function openFile(art: Artifact) {
-  if (art.url) fileViewer.value = { url: art.url, name: art.name }
-}
-
-// Read-only snapshots of the definition files as they were when a run started
-function viewPipelineMdSnapshot(pipeline: string, run: PipelineRun, e: Event) {
-  e.stopPropagation()
+// Read-only snapshot of pipeline.md as it was when a run started
+function viewPipelineMdSnapshot(pipeline: string, run: PipelineRun) {
   fileViewer.value = {
     name: 'pipeline.md',
     url: `/api/pipelines/${pipeline}/runs/${run.id}/pipeline-md`,
@@ -463,140 +395,11 @@ function viewPipelineMdSnapshot(pipeline: string, run: PipelineRun, e: Event) {
   }
 }
 
-function viewSkillSnapshot() {
-  const sd = stageDetail.value
-  if (!sd?.run) return
-  fileViewer.value = {
-    name: 'SKILL.md',
-    url: `/api/pipelines/${sd.pipeline}/runs/${sd.run.id}/stages/${sd.stageIndex}/skill-md`,
-    subtitle: `${sd.defStage?.skill || sd.record?.skill} · run #${runNo(sd.run)} · read-only snapshot`,
-  }
-}
-
-function openImage(art: Artifact) {
-  if (art.url) imageOverlay.value = { url: art.url, name: art.name }
-}
-
-function openDiff(art: Artifact) {
-  const commits = stageArtifacts.value.filter(a => a.type === 'commit')
-  const index = Math.max(0, commits.findIndex(c => c.url === art.url))
-  diffViewer.value = { commits, index }
-}
-
-// Keep the log view pinned to the newest line as logs stream in
-const logsEl = ref<HTMLElement | null>(null)
-watch(() => stageDetail.value?.record?.logs, () => {
-  nextTick(() => {
-    if (logsEl.value) logsEl.value.scrollTop = logsEl.value.scrollHeight
-  })
-})
-
-function statusColor(status: string): string {
-  if (status === 'running') return 'var(--color-status-running)'
-  if (status === 'stopped' || status === 'failed') return 'var(--color-status-stopped)'
-  if (status === 'completed') return 'var(--color-status-running)'
-  if (status === 'cancelled') return 'var(--color-warning)'
-  return 'var(--color-status-default)'
-}
-
-function stageStatusColor(status: string): string {
-  if (status === 'running') return 'var(--color-status-running)'
-  if (status === 'completed') return 'var(--color-status-running)'
-  if (status === 'failed') return 'var(--color-error)'
-  if (status === 'cancelled') return 'var(--color-warning)'
-  if (status === 'skipped') return 'var(--color-text-muted)'
-  return 'var(--color-status-default)'
-}
-
-function stageStatusIcon(status: string): string {
-  if (status === 'completed') return '✓'
-  if (status === 'failed') return '✕'
-  if (status === 'running') return '●'
-  if (status === 'skipped') return '–'
-  if (status === 'cancelled') return '⊘'
-  return '○'
-}
-
-function formatDuration(ms: number | null): string {
-  if (ms === null) return '—'
-  if (ms < 1000) return `${ms}ms`
-  const secs = Math.floor(ms / 1000)
-  if (secs < 60) return `${secs}s`
-  const mins = Math.floor(secs / 60)
-  const remainSecs = secs % 60
-  return `${mins}m ${remainSecs}s`
-}
-
-function formatTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function runDuration(run: PipelineRun): string {
-  if (!run.started_at) return '—'
-  const start = new Date(run.started_at).getTime()
-  const end = run.completed_at ? new Date(run.completed_at).getTime() : now.value
-  return formatDuration(end - start)
-}
-
-// Live elapsed time for a stage: final duration once recorded, otherwise ticks
-// from start — but ONLY while actually running. A terminal stage (cancelled,
-// failed, etc.) must not keep ticking even if its duration was never recorded.
-function liveStageDuration(record: { status?: string; started_at: string | null; completed_at: string | null; duration_ms: number | null }): string {
-  if (record.duration_ms !== null) return formatDuration(record.duration_ms)
-  if (!record.started_at) return '—'
-  if (record.status === 'running') return formatDuration(now.value - new Date(record.started_at).getTime())
-  if (record.completed_at) return formatDuration(new Date(record.completed_at).getTime() - new Date(record.started_at).getTime())
-  // Terminal but no recorded end (orphaned by a restart) — don't tick.
-  return '—'
-}
+const startingRuns = ref<Set<string>>(new Set())
 
 function latestRun(pipeline: string): PipelineRun | null {
   const runs = pipelineRuns.value[pipeline]
   return runs?.length ? runs[0] : null
-}
-
-function latestRunStages(pipeline: string): PipelineStageRecord[] {
-  const run = latestRun(pipeline)
-  return run?.stages || []
-}
-
-// Pipelines whose run we've just kicked off, for optimistic UI before the real
-// run record arrives (so the button flips to Cancel and the entry stage shows
-// running immediately).
-const startingRuns = ref<Set<string>>(new Set())
-
-function isEntryStage(stages: PipelineStage[], index: number): boolean {
-  return !stages.some(s => (s.next || []).includes(index))
-}
-
-// Stage records to render on the graph: the real latest-run stages, or — while
-// a run is optimistically starting and the real record hasn't landed yet — a
-// synthetic set with the entry stage(s) running and the rest pending.
-function displayStages(pipeline: string): PipelineStageRecord[] {
-  if (startingRuns.value.has(pipeline) && latestRun(pipeline)?.status !== 'running') {
-    const defs = pipelines.value.find(p => p.name === pipeline)?.stages || []
-    const nowIso = new Date().toISOString()
-    return defs.map((_, i) => {
-      const running = isEntryStage(defs, i)
-      return {
-        stage_index: i,
-        status: running ? 'running' : 'pending',
-        started_at: running ? nowIso : null,
-        completed_at: null,
-        duration_ms: null,
-        success_criteria_met: 0,
-      } as unknown as PipelineStageRecord
-    })
-  }
-  return latestRunStages(pipeline)
 }
 </script>
 
@@ -611,349 +414,43 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
 
     <div class="pipelines-content">
       <div class="pipelines-list">
-        <div
+        <PipelineCard
           v-for="pl in pipelines"
           :key="pl.name"
-          class="pipeline-card"
-          :class="{ deleting: pl.status === 'deleting' }"
-        >
-          <div class="pipeline-header">
-            <div class="pipeline-name-row">
-              <span class="pipeline-name">{{ pl.name }}</span>
-              <span v-if="pl.status === 'deleting'" class="deleting-badge">
-                <span class="deleting-spinner"></span> Deleting…
-              </span>
-              <div class="header-actions">
-                <IconButton title="Edit pipeline in the definitions editor" @click.stop="editPipelineInDefinitions(pl.definition)">
-                  <EditIcon width="15" height="15" />
-                </IconButton>
-                <IconButton :active="expandedPipeline === pl.name" title="Run history" @click.stop="toggleExpand(pl.name)">
-                  <HistoryIcon width="15" height="15" />
-                </IconButton>
-                <IconButton title="Edit env args" @click.stop="openArgsEditor(pl.name)">
-                  <SlidersIcon width="15" height="15" />
-                </IconButton>
-                <IconButton variant="danger" title="Delete pipeline" @click.stop="deleteTarget = pl.name">
-                  <TrashIcon width="15" height="15" />
-                </IconButton>
-              </div>
-            </div>
-          </div>
-
-          <!-- Stage graph + Run -->
-          <div class="stage-row">
-            <PipelineGraph v-if="pl.stages?.length" class="stage-graph" :stages="pl.stages">
-              <template #node="{ stage, index }">
-                <div
-                  class="node-stage gnode"
-                  :class="displayStages(pl.name)[index]?.status || 'pending'"
-                  @click="selectStage(pl.name, index, null)"
-                >
-                  <svg v-if="displayStages(pl.name)[index]?.status === 'running'" class="running-ring">
-                    <rect />
-                  </svg>
-                  <div class="stage-elapsed" :style="{ color: stageStatusColor(displayStages(pl.name)[index]?.status || 'pending') }">
-                    {{ displayStages(pl.name)[index] ? liveStageDuration(displayStages(pl.name)[index]) : '—' }}
-                  </div>
-                  <div class="stage-info">
-                    <span class="stage-name">{{ stage.name }}</span>
-                    <span class="stage-meta">
-                      <span class="stage-skill">{{ stage.skill }}</span>
-                    </span>
-                  </div>
-                  <div
-                    v-if="displayStages(pl.name)[index]?.success_criteria_met"
-                    class="criteria-check"
-                    title="Success criteria met"
-                  >✓</div>
-                  <button
-                    v-if="canRerunStages(pl.name) && displayStages(pl.name)[index]"
-                    class="stage-rerun-btn"
-                    title="Rerun from this stage (new run, preceding stages kept)"
-                    @click.stop="rerunStageAsNew(pl.name, index, $event)"
-                  >
-                    <RerunIcon width="13" height="13" />
-                  </button>
-                </div>
-              </template>
-            </PipelineGraph>
-            <div class="stage-map empty-map" v-else>
-              <span class="empty-text">No stages defined</span>
-            </div>
-
-            <button
-              v-if="pl.stages?.length"
-              class="btn-run-lg"
-              :class="{ cancelling: isRunActive(pl.name) }"
-              :title="isRunActive(pl.name) ? 'Cancel run' : 'Start a new run'"
-              @click="toggleRun(pl.name, $event)"
-            >{{ isRunActive(pl.name) ? '■ Cancel' : '▶ Run' }}</button>
-          </div>
-
-          <!-- Expanded run history -->
-          <div v-if="expandedPipeline === pl.name" class="run-history">
-            <div class="run-history-header">
-              <span class="run-history-title">Run History</span>
-            </div>
-            <div v-if="!pipelineRuns[pl.name]?.length" class="no-runs">
-              No runs recorded yet
-            </div>
-            <div
-              v-for="run in pipelineRuns[pl.name]"
-              :key="run.id"
-              class="run-record"
-            >
-              <div class="run-summary">
-                <div class="run-status-dot" :style="{ background: statusColor(run.status) }"></div>
-                <span class="run-id">#{{ runNo(run) }}</span>
-                <span class="run-status-text" :class="run.status">{{ run.status }}</span>
-                <button
-                  class="run-md-btn"
-                  title="View pipeline.md as it was for this run"
-                  @click="viewPipelineMdSnapshot(pl.name, run, $event)"
-                >
-                  <FileLinesIcon width="11" height="11" />
-                  pipeline.md
-                </button>
-                <span class="run-time">{{ formatTime(run.started_at) }}</span>
-                <span class="run-duration">{{ runDuration(run) }}</span>
-              </div>
-              <div class="run-stages">
-                <div
-                  v-for="stage in run.stages"
-                  :key="stage.id"
-                  class="run-stage-row"
-                  @click="selectStage(pl.name, stage.stage_index, run.id)"
-                >
-                  <div class="run-stage-status" :style="{ color: stageStatusColor(stage.status) }">
-                    {{ stageStatusIcon(stage.status) }}
-                  </div>
-                  <span class="run-stage-name">{{ stage.stage_name }}</span>
-                  <span class="run-stage-duration">{{ liveStageDuration(stage) }}</span>
-                  <span
-                    v-if="stage.success_criteria"
-                    class="run-criteria"
-                    :class="{ met: stage.success_criteria_met, unmet: !stage.success_criteria_met && (stage.status === 'completed' || stage.status === 'failed') }"
-                    :title="stage.success_criteria"
-                  >
-                    {{ stage.success_criteria_met ? '✓ criteria met' : (stage.status === 'completed' || stage.status === 'failed' ? '✕ criteria not met' : 'pending') }}
-                  </span>
-                  <span v-if="stage.error" class="run-stage-error" :title="stage.error">
-                    {{ stage.error }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+          :pipeline="pl"
+          :runs="pipelineRuns[pl.name] || []"
+          :expanded="expandedPipeline === pl.name"
+          :starting="startingRuns.has(pl.name)"
+          :now="now"
+          @edit="editPipelineInDefinitions(pl.definition)"
+          @toggle-history="toggleExpand(pl.name)"
+          @edit-args="openArgsEditor(pl.name)"
+          @delete="deleteTarget = pl.name"
+          @run="toggleRun(pl.name, $event)"
+          @rerun="rerunStageAsNew(pl.name, $event)"
+          @select-stage="selectStage(pl.name, $event.stageIndex, $event.runId)"
+          @view-pipeline-md="viewPipelineMdSnapshot(pl.name, $event)"
+        />
 
         <div v-if="!pipelines.length" class="empty-state">
           <p>No pipelines yet</p>
           <button class="btn-new" @click="openNewModal">Create your first pipeline</button>
         </div>
       </div>
-
     </div>
 
     <!-- Stage detail modal -->
-    <Modal
+    <StageDetailModal
       v-if="stageDetail"
-      :title="stageDetail.defStage?.name || stageDetail.record?.stage_name"
+      :detail="stageDetail"
+      :now="now"
       @close="closeStageModal"
-    >
-      <template #title>
-        <h3 class="detail-title-h">{{ stageDetail.defStage?.name || stageDetail.record?.stage_name }}</h3>
-        <span class="detail-pipeline">{{ stageDetail.pipeline }}<template v-if="stageDetail.run"> · run #{{ runNo(stageDetail.run) }}</template></span>
-      </template>
-
-      <div class="detail-body">
-            <div class="detail-section">
-              <div class="detail-label">Skill</div>
-              <div class="detail-skill-row">
-                <span class="detail-value">{{ stageDetail.defStage?.skill || stageDetail.record?.skill }}</span>
-                <div class="detail-skill-actions">
-                  <button
-                    v-if="stageDetail.run"
-                    class="btn-edit-skill"
-                    title="View SKILL.md as it was for this run"
-                    @click="viewSkillSnapshot"
-                  >
-                    <EyeIcon width="12" height="12" />
-                    View at run time
-                  </button>
-                  <button
-                    class="btn-edit-skill"
-                    title="Edit this skill in the definitions editor"
-                    @click="editSkillInDefinitions((stageDetail.defStage?.skill || stageDetail.record?.skill) as string)"
-                  >
-                    <PencilIcon width="12" height="12" />
-                    Edit skill
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="detail-section" v-if="stageDetail.defStage?.description">
-              <div class="detail-label">Description</div>
-              <div class="detail-value description">{{ stageDetail.defStage.description }}</div>
-            </div>
-
-            <div class="detail-section" v-if="stageDetail.defStage?.successCriteria || stageDetail.record?.success_criteria">
-              <div class="detail-label">Success Criteria</div>
-              <div class="detail-value criteria" :class="{
-                met: stageDetail.record?.success_criteria_met,
-                unmet: !stageDetail.record?.success_criteria_met && (stageDetail.record?.status === 'completed' || stageDetail.record?.status === 'failed')
-              }">
-                <span class="criteria-icon" v-if="stageDetail.record?.status === 'completed' || stageDetail.record?.status === 'failed'">
-                  {{ stageDetail.record.success_criteria_met ? '✓' : '✕' }}
-                </span>
-                {{ stageDetail.defStage?.successCriteria || stageDetail.record?.success_criteria }}
-              </div>
-            </div>
-
-            <template v-if="stageDetail.record">
-              <div class="detail-section">
-                <div class="detail-label">Status</div>
-                <div class="detail-value">
-                  <span class="detail-status" :style="{ color: stageStatusColor(stageDetail.record.status) }">
-                    {{ stageStatusIcon(stageDetail.record.status) }} {{ stageDetail.record.status }}
-                  </span>
-                </div>
-              </div>
-
-              <div class="detail-section" v-if="canWatchLiveBrowser">
-                <div class="detail-label">Live Browser</div>
-                <button v-if="!showLiveBrowser" class="btn-live-browser" @click="showLiveBrowser = true">
-                  ▶ Watch the agent drive the browser
-                </button>
-                <div v-else class="live-browser">
-                  <div class="live-browser-bar">
-                    <span class="live-dot"></span> Live
-                    <a class="live-browser-open" :href="liveBrowserUrl" target="_blank" rel="noopener" title="Open in a new tab">↗</a>
-                    <button class="live-browser-hide" @click="showLiveBrowser = false">Hide</button>
-                  </div>
-                  <iframe
-                    :src="liveBrowserUrl"
-                    class="live-browser-frame"
-                    allow="autoplay; clipboard-read; clipboard-write"
-                  ></iframe>
-                </div>
-              </div>
-
-              <div class="detail-section">
-                <div class="detail-label">Timing</div>
-                <div class="detail-timing">
-                  <div class="timing-row">
-                    <span class="timing-label">Started</span>
-                    <span class="timing-value">{{ formatDateTime(stageDetail.record.started_at) }}</span>
-                  </div>
-                  <div class="timing-row">
-                    <span class="timing-label">Completed</span>
-                    <span class="timing-value">{{ formatDateTime(stageDetail.record.completed_at) }}</span>
-                  </div>
-                  <div class="timing-row">
-                    <span class="timing-label">Duration</span>
-                    <span class="timing-value highlight">{{ liveStageDuration(stageDetail.record) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="detail-section" v-if="stageDetail.record.error">
-                <div class="detail-label">Error</div>
-                <div class="detail-value error-block">{{ stageDetail.record.error }}</div>
-              </div>
-
-              <div class="detail-section">
-                <div class="detail-label">
-                  Logs
-                  <span v-if="stageDetail.record.status === 'running'" class="log-live">● live</span>
-                </div>
-                <div ref="logsEl" class="detail-logs">
-                  <pre v-if="stageDetail.record.logs" class="logs-text">{{ stageDetail.record.logs }}</pre>
-                  <div class="logs-placeholder" v-else-if="stageDetail.record.status === 'pending'">
-                    Stage has not started yet
-                  </div>
-                  <div class="logs-placeholder" v-else>
-                    No logs captured for this run
-                  </div>
-                </div>
-              </div>
-
-              <div class="detail-section">
-                <div class="detail-label">Artifacts</div>
-                <div v-if="stageArtifacts.length" class="artifact-grid">
-                  <template v-for="(art, ai) in stageArtifacts" :key="ai">
-                    <!-- screenshot -->
-                    <div v-if="art.type === 'screenshot'" class="artifact artifact-media">
-                      <button class="media-thumb" title="Fill browser viewport" @click="openImage(art)">
-                        <img :src="art.url" :alt="art.name" loading="lazy" />
-                        <span class="media-expand">
-                          <MaximizeIcon width="15" height="15" />
-                        </span>
-                      </button>
-                      <div class="artifact-caption">
-                        <span class="artifact-icon">🖼</span>
-                        <button class="artifact-name link" @click="openImage(art)">{{ art.name }}</button>
-                        <span class="artifact-size">{{ formatSize(art.size) }}</span>
-                      </div>
-                    </div>
-                    <!-- video -->
-                    <div v-else-if="art.type === 'video'" class="artifact artifact-media">
-                      <div class="video-wrap">
-                        <video class="artifact-video-player" :src="art.url" controls preload="metadata" :poster="art.poster"></video>
-                        <button
-                          class="video-expand"
-                          title="Fill browser viewport"
-                          @click="videoOverlay = { url: art.url!, name: art.name }"
-                        >
-                          <MaximizeIcon width="15" height="15" />
-                        </button>
-                      </div>
-                      <div class="artifact-caption">
-                        <span class="artifact-icon">🎬</span>
-                        <a class="artifact-name link" :href="art.url" target="_blank" rel="noopener">{{ art.name }}</a>
-                        <span class="artifact-size">{{ formatSize(art.size) }}</span>
-                      </div>
-                    </div>
-                    <!-- commit -->
-                    <button v-else-if="art.type === 'commit'" class="artifact artifact-row commit-btn" @click="openDiff(art)">
-                      <span class="artifact-icon">⎇</span>
-                      <div class="artifact-commit-info">
-                        <span class="commit-sha">{{ art.name }}</span>
-                        <span class="commit-msg">{{ art.message }}</span>
-                      </div>
-                      <span class="commit-stat add">+{{ art.additions }}</span>
-                      <span class="commit-stat del">−{{ art.deletions }}</span>
-                    </button>
-                    <!-- link -->
-                    <a v-else-if="art.type === 'link'" class="artifact artifact-row" :href="art.url" target="_blank" rel="noopener">
-                      <span class="artifact-icon">🔗</span>
-                      <span class="artifact-name">{{ art.name }}</span>
-                      <span class="artifact-ext">↗</span>
-                    </a>
-                    <!-- file -->
-                    <button v-else class="artifact artifact-row file-btn" @click="openFile(art)">
-                      <span class="artifact-icon">📄</span>
-                      <span class="artifact-name">{{ art.name }}</span>
-                      <span class="artifact-size">{{ formatSize(art.size) }}</span>
-                      <span class="artifact-view">View</span>
-                    </button>
-                  </template>
-                </div>
-                <div v-else class="detail-artifacts">
-                  <div class="artifacts-placeholder">No artifacts produced</div>
-                </div>
-              </div>
-            </template>
-
-            <template v-else>
-              <div class="detail-section">
-                <div class="detail-label">Status</div>
-                <div class="detail-value muted">No run data — start a run to see execution details</div>
-              </div>
-            </template>
-      </div>
-    </Modal>
+      @edit-skill="editSkillInDefinitions"
+      @open-file="fileViewer = $event"
+      @open-image="imageOverlay = $event"
+      @open-video="videoOverlay = $event"
+      @open-diff="diffViewer = $event"
+    />
 
     <!-- Delete pipeline confirm -->
     <Modal v-if="deleteTarget" title="Delete pipeline" @close="!deleting && (deleteTarget = null)">
@@ -1194,24 +691,6 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
   gap: 8px;
 }
 
-.btn-secondary {
-  padding: 7px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border-medium);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.btn-secondary:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
 .btn-new {
   padding: 7px 16px;
   border-radius: 6px;
@@ -1245,146 +724,6 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
   gap: 16px;
 }
 
-/* Pipeline card */
-.pipeline-card {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 8px;
-  overflow: hidden;
-  transition: border-color 0.15s, opacity 0.2s;
-}
-
-.pipeline-card.deleting {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.deleting-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-status-stopped);
-}
-
-.deleting-spinner {
-  width: 11px;
-  height: 11px;
-  border: 2px solid var(--color-status-stopped);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.pipeline-header {
-  padding: 14px 20px;
-}
-
-.pipeline-name-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.pipeline-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.pipeline-status-badge {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-.pipeline-status-badge.running {
-  color: var(--color-status-running);
-  background: rgba(91, 168, 160, 0.12);
-}
-
-.pipeline-status-badge.stopped {
-  color: var(--color-status-stopped);
-  background: rgba(232, 128, 96, 0.12);
-}
-
-.pipeline-status-badge.not_found {
-  color: var(--color-status-default);
-  background: rgba(106, 88, 104, 0.15);
-}
-
-.header-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Stage row holds the stage graph plus a large, right-aligned Run button */
-.stage-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 4px 20px 14px;
-}
-
-.stage-graph {
-  flex: 1;
-  min-width: 0;
-}
-
-/* stage card fills the graph's fixed node box */
-.gnode {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-}
-
-.btn-run-lg {
-  flex-shrink: 0;
-  align-self: center;
-  padding: 6px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--color-status-running);
-  background: var(--color-status-running);
-  color: var(--color-text-bright);
-  font-size: 12px;
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
-}
-
-.btn-run-lg:hover {
-  opacity: 0.88;
-}
-
-.btn-run-lg.cancelling {
-  border-color: var(--color-status-stopped);
-  background: transparent;
-  color: var(--color-status-stopped);
-}
-
-.btn-run-lg.cancelling:hover {
-  background: var(--color-status-stopped);
-  color: var(--color-text-bright);
-  opacity: 1;
-}
-
 .confirm-text {
   margin: 0;
   font-size: 13px;
@@ -1395,925 +734,6 @@ function displayStages(pipeline: string): PipelineStageRecord[] {
 .confirm-text strong {
   color: var(--color-text-bright);
 }
-
-/* Stage map */
-.stage-map {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  overflow-x: auto;
-  padding: 2px 0;
-}
-
-.stage-map::-webkit-scrollbar {
-  height: 4px;
-}
-.stage-map::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
-  border-radius: 2px;
-}
-
-.empty-map {
-  justify-content: center;
-  min-height: 40px;
-}
-
-.empty-text {
-  font-size: 12px;
-  color: var(--color-text-muted);
-}
-
-.node { flex-shrink: 0; }
-
-.node-start, .node-end {
-  display: flex;
-  align-items: center;
-  padding: 0 2px;
-}
-
-.node-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.start-dot { background: var(--color-accent); }
-
-.end-dot {
-  background: var(--color-border-medium);
-  border: 2px solid var(--color-text-muted);
-  width: 10px;
-  height: 10px;
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.end-dot.done {
-  background: var(--color-status-running);
-  border-color: var(--color-status-running);
-}
-
-/* Stage node — clickable */
-.node-stage {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-bg-element);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  padding: 8px 12px;
-  min-width: 130px;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.15s, box-shadow 0.2s;
-}
-
-/* Rotating dashed "marching ants" ring around a running stage, ~2px outside the card */
-.running-ring {
-  position: absolute;
-  inset: -3px;
-  width: calc(100% + 6px);
-  height: calc(100% + 6px);
-  overflow: visible;
-  pointer-events: none;
-}
-
-.running-ring rect {
-  x: 0;
-  y: 0;
-  width: 100%;
-  height: 100%;
-  rx: 9px;
-  ry: 9px;
-  fill: none;
-  stroke: var(--color-status-running);
-  stroke-width: 1.5px;
-  stroke-dasharray: 6 5;
-  animation: marching-ants 0.6s linear infinite;
-}
-
-@keyframes marching-ants {
-  to { stroke-dashoffset: -11px; }
-}
-
-.node-stage:hover {
-  background: var(--color-bg-element-hover);
-}
-
-.node-stage.running {
-  border-color: var(--color-status-running);
-}
-
-.node-stage.completed {
-  border-color: var(--color-status-running);
-}
-
-.node-stage.failed {
-  border-color: var(--color-error);
-}
-
-.node-stage.cancelled {
-  border-color: var(--color-warning);
-}
-
-.stage-elapsed {
-  flex-shrink: 0;
-  min-width: 46px;
-  text-align: center;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-variant-numeric: tabular-nums;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-.stage-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.stage-name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.stage-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stage-skill {
-  font-size: 10px;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-
-.stage-duration {
-  font-size: 10px;
-  color: var(--color-status-running);
-  font-weight: 500;
-}
-
-.criteria-check {
-  color: var(--color-status-running);
-  font-size: 12px;
-  font-weight: 700;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-/* Rerun-from-this-stage affordance — only rendered when the latest run
-   failed/cancelled. Sits in the top-right corner of the stage card. */
-.stage-rerun-btn {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--color-border-medium);
-  background: var(--color-bg-element);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s, transform 0.15s;
-  z-index: 3;
-}
-
-.node-stage:hover .stage-rerun-btn {
-  opacity: 1;
-}
-
-.stage-rerun-btn:hover {
-  color: var(--color-status-running);
-  border-color: var(--color-status-running);
-  background: var(--color-bg-element-hover);
-  transform: rotate(-30deg);
-}
-
-/* Connector */
-.connector {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  width: 28px;
-}
-
-.connector-line {
-  flex: 1;
-  height: 2px;
-  background: var(--color-border-medium);
-  transition: background 0.2s;
-}
-
-.connector.active .connector-line {
-  background: var(--color-status-running);
-}
-
-.connector-arrow {
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--color-border-medium);
-  flex-shrink: 0;
-  transition: border-color 0.2s;
-}
-
-.connector.active .connector-arrow {
-  border-left-color: var(--color-status-running);
-}
-
-/* Run history */
-.run-history {
-  border-top: 1px solid var(--color-border-dark);
-  padding: 12px 20px 16px;
-  background: var(--color-bg-primary);
-}
-
-.run-history-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.run-history-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.no-runs {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  padding: 8px 0;
-}
-
-.run-record {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 6px;
-  margin-bottom: 8px;
-  overflow: hidden;
-}
-
-.run-record:last-child { margin-bottom: 0; }
-
-.run-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border-dark);
-}
-
-.run-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.run-id {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.run-status-text {
-  font-size: 10px;
-  text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.run-status-text.running { color: var(--color-status-running); }
-.run-status-text.completed { color: var(--color-status-running); }
-.run-status-text.failed { color: var(--color-error); }
-.run-status-text.pending { color: var(--color-status-default); }
-.run-status-text.cancelled { color: var(--color-warning); }
-
-.run-time {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  margin-left: auto;
-}
-
-.run-duration {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-
-.run-stages { padding: 4px 0; }
-
-.run-stage-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.run-stage-row:hover {
-  background: var(--color-bg-tertiary);
-}
-
-.run-stage-status {
-  font-size: 12px;
-  font-weight: 700;
-  width: 16px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.run-stage-name {
-  color: var(--color-text-primary);
-  font-weight: 500;
-  min-width: 80px;
-}
-
-.run-stage-duration {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  min-width: 40px;
-}
-
-.run-criteria {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
-  color: var(--color-text-muted);
-}
-
-.run-criteria.met {
-  color: var(--color-status-running);
-  background: rgba(91, 168, 160, 0.12);
-}
-
-.run-criteria.unmet {
-  color: var(--color-error);
-  background: rgba(232, 88, 88, 0.12);
-}
-
-.run-stage-error {
-  color: var(--color-error);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-  margin-left: auto;
-}
-
-/* Stage detail modal */
-.detail-title-h {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.detail-pipeline {
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-.detail-section {
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--color-border-dark);
-}
-
-.detail-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 6px;
-}
-
-.detail-value {
-  font-size: 13px;
-  color: var(--color-text-primary);
-  line-height: 1.5;
-}
-
-.detail-value.description {
-  font-size: 12px;
-  color: var(--color-text-hover);
-}
-
-.detail-skill-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.detail-skill-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.run-md-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-medium);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 10px;
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  margin-left: 4px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.run-md-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.btn-edit-skill {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-medium);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  flex-shrink: 0;
-}
-
-.btn-edit-skill:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.detail-value.criteria {
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 4px;
-  background: var(--color-bg-primary);
-}
-
-.detail-value.criteria.met {
-  color: var(--color-status-running);
-  border-left: 3px solid var(--color-status-running);
-}
-
-.detail-value.criteria.unmet {
-  color: var(--color-error);
-  border-left: 3px solid var(--color-error);
-}
-
-.criteria-icon {
-  font-weight: 700;
-  margin-right: 4px;
-}
-
-.detail-value.muted {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-style: italic;
-}
-
-.detail-status {
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-/* Live browser stream */
-.btn-live-browser {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid var(--color-accent);
-  background: transparent;
-  color: var(--color-accent);
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.btn-live-browser:hover { background: var(--color-accent); color: var(--color-text-bright); }
-
-.live-browser {
-  border: 1px solid var(--color-border-dark);
-  border-radius: 8px;
-  overflow: hidden;
-  background: #000;
-}
-.live-browser-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--color-bg-secondary);
-  border-bottom: 1px solid var(--color-border-dark);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-.live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-status-running);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-.live-browser-open {
-  color: var(--color-text-muted);
-  text-decoration: none;
-  font-size: 13px;
-}
-.live-browser-open:hover { color: var(--color-accent); }
-.live-browser-hide {
-  margin-left: auto;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-}
-.live-browser-hide:hover { color: var(--color-text-primary); }
-.live-browser-frame {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  border: none;
-  background: #000;
-}
-
-.detail-timing {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.timing-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-}
-
-.timing-label {
-  color: var(--color-text-muted);
-}
-
-.timing-value {
-  color: var(--color-text-primary);
-}
-
-.timing-value.highlight {
-  color: var(--color-status-running);
-  font-weight: 600;
-}
-
-.error-block {
-  font-size: 12px;
-  color: var(--color-error);
-  background: rgba(232, 88, 88, 0.08);
-  padding: 8px 10px;
-  border-radius: 4px;
-  border-left: 3px solid var(--color-error);
-  font-family: monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.detail-logs {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 4px;
-  min-height: 80px;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 8px 10px;
-}
-
-.logs-text {
-  margin: 0;
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.55;
-  color: var(--color-text-hover);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.logs-placeholder {
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-.log-live {
-  color: var(--color-status-running);
-  font-size: 9px;
-  margin-left: 6px;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.detail-artifacts {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 4px;
-  padding: 8px 10px;
-}
-
-.artifacts-placeholder {
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-
-/* Artifacts */
-.artifact-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.artifact {
-  text-decoration: none;
-  color: inherit;
-}
-
-.artifact-media {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--color-border-dark);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--color-bg-primary);
-  transition: border-color 0.15s;
-}
-
-.artifact-media:hover {
-  border-color: var(--color-accent);
-}
-
-.artifact-media img {
-  width: 100%;
-  height: 150px;
-  object-fit: cover;
-  display: block;
-  background: var(--color-bg-tertiary);
-}
-
-.video-wrap {
-  position: relative;
-}
-
-.artifact-video-player {
-  width: 100%;
-  max-height: 200px;
-  display: block;
-  background: #000;
-}
-
-/* hover-reveal expand button shared by video + screenshot thumbnails */
-.media-thumb {
-  position: relative;
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: none;
-  background: var(--color-bg-tertiary);
-  cursor: pointer;
-}
-
-.media-thumb img {
-  width: 100%;
-  height: 150px;
-  object-fit: cover;
-  display: block;
-}
-
-.video-expand,
-.media-expand {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 5px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
-}
-
-.video-wrap:hover .video-expand,
-.media-thumb:hover .media-expand {
-  opacity: 1;
-}
-
-.video-expand:hover {
-  background: rgba(0, 0, 0, 0.8);
-}
-
-/* viewport-overlay body content (video / image) */
-.vp-video {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  object-fit: contain;
-  background: #000;
-}
-
-.vp-image-wrap {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  overflow: auto;
-}
-
-.vp-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.vp-raw {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  text-decoration: none;
-}
-
-.vp-raw:hover {
-  color: var(--color-accent);
-}
-
-.artifact-name.link {
-  text-decoration: none;
-}
-
-button.artifact-name.link {
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  font: inherit;
-}
-
-.artifact-name.link:hover {
-  color: var(--color-accent);
-  text-decoration: underline;
-}
-
-.artifact-caption {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  font-size: 11px;
-}
-
-.artifact-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--color-border-dark);
-  border-radius: 6px;
-  background: var(--color-bg-primary);
-  font-size: 12px;
-  transition: border-color 0.15s;
-}
-
-a.artifact-row:hover,
-.commit-btn:hover {
-  border-color: var(--color-accent);
-}
-
-.commit-btn,
-.file-btn {
-  width: 100%;
-  font-family: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.file-btn:hover {
-  border-color: var(--color-accent);
-}
-
-.artifact-view {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-accent);
-  margin-left: auto;
-  flex-shrink: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.file-btn .artifact-size {
-  margin-left: 0;
-}
-
-.artifact-icon {
-  flex-shrink: 0;
-  font-size: 13px;
-}
-
-.artifact-name {
-  color: var(--color-text-primary);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.artifact-size {
-  color: var(--color-text-muted);
-  font-size: 10px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.artifact-ext {
-  color: var(--color-text-muted);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.artifact-commit-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.commit-sha {
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.commit-msg {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.commit-stat {
-  font-size: 10px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.commit-stat.add { color: var(--color-status-running); }
-.commit-stat.del { color: var(--color-status-stopped); }
-.commit-stat.add { margin-left: auto; }
 
 /* Empty state */
 .empty-state {
@@ -2331,7 +751,7 @@ a.artifact-row:hover,
   margin: 0;
 }
 
-/* Modal */
+/* Modal forms */
 .modal-pad {
   padding: 20px;
 }
@@ -2374,10 +794,6 @@ a.artifact-row:hover,
   color: var(--color-text-muted);
 }
 
-.args-form {
-  margin-bottom: 14px;
-}
-
 .arg-field {
   margin-bottom: 12px;
 }
@@ -2413,23 +829,37 @@ a.artifact-row:hover,
   color: var(--color-text-muted);
 }
 
+/* env args editor */
+.args-form { display: flex; flex-direction: column; gap: 14px; width: 100%; margin-bottom: 14px; }
+.args-row { display: flex; flex-direction: column; gap: 6px; }
+.args-label { display: flex; flex-direction: column; gap: 2px; }
+.args-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+.args-req { color: var(--color-error); margin-left: 2px; }
+.args-desc { font-size: 12px; color: var(--color-text-muted); }
+.args-input,
 .args-form input {
-  width: 100%;
-  padding: 9px 12px;
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-medium);
   border-radius: 6px;
   color: var(--color-text-primary);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 13px;
-  font-family: inherit;
+  padding: 9px 12px;
   outline: none;
   transition: border-color 0.15s;
+  width: 100%;
 }
-
+.args-input:focus,
 .args-form input:focus { border-color: var(--color-accent); }
 .args-form input::placeholder { color: var(--color-text-muted); }
+.args-note { font-size: 12px; color: var(--color-text-muted); margin: 4px 0 0; }
 
-/* Claude sign-in modal */
+/* Claude sign-in / GitHub session modals */
 .auth-desc { font-size: 13px; color: var(--color-text-hover); margin: 0 0 14px; line-height: 1.5; }
 .auth-getlink { display: flex; }
 .auth-steps { margin: 0 0 12px; padding-left: 20px; font-size: 13px; color: var(--color-text-primary); }
@@ -2471,31 +901,38 @@ a.artifact-row:hover,
 .gh-status.ok .gh-dot { background: var(--color-status-running); }
 .gh-meta { color: var(--color-text-muted); margin-left: 2px; }
 
-
-/* env args editor */
-.args-form { display: flex; flex-direction: column; gap: 14px; width: 100%; }
-.args-row { display: flex; flex-direction: column; gap: 6px; }
-.args-label { display: flex; flex-direction: column; gap: 2px; }
-.args-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
+/* viewport-overlay body content (video / image) */
+.vp-video {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  background: #000;
 }
-.args-req { color: var(--color-error); margin-left: 2px; }
-.args-desc { font-size: 12px; color: var(--color-text-muted); }
-.args-input {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  color: var(--color-text-primary);
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 13px;
-  padding: 9px 12px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.args-input:focus { border-color: var(--color-accent); }
-.args-note { font-size: 12px; color: var(--color-text-muted); margin: 4px 0 0; }
 
+.vp-image-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow: auto;
+}
+
+.vp-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.vp-raw {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.vp-raw:hover {
+  color: var(--color-accent);
+}
 </style>
