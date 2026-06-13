@@ -1,8 +1,8 @@
 // Lifecycle for a pipeline's sidecar containers (browser, rancher, …): start
 // (creating with the right network/env/volumes the first time), stop, remove.
 import { spawn, spawnSync } from 'child_process';
-import { getTemplateMeta, DEFAULT_BROWSER_SIDECAR, SidecarDef } from '../templates';
-import { extractPipelineFlags } from '../pipelineFlags';
+import { getTemplateMeta, DEFAULT_BROWSER_SIDECAR, SidecarDef } from './templates';
+import { extractPipelineFlags } from '../utils/pipelineFlags';
 import { COMPOSE_PROJECT, NETWORK_NAME, KEY_DEFAULTS } from '../config/constants';
 import { getContainerStatus } from '../utils/container';
 import { readBenderJson } from './benderJson';

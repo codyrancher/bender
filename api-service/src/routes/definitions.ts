@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { listSkillDefinitions, getSkillDefinition } from './skill-definitions';
-import { getTemplateClaudeMd } from './templates';
+import { getTemplateClaudeMd } from '../services/templates';
 
 // Template whose CLAUDE.md seeds a new definition's CLAUDE.md by default (every
 // pipeline gets this template's environment unless another is requested).

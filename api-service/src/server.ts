@@ -1,28 +1,14 @@
-import express from 'express';
-import cors from 'cors';
+// Entry point: ensure data dirs, attach the websocket servers, and listen.
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
-import { registerRoutes, initPortForwards } from './routes';
-import { registerInsightsRoutes } from './insights';
-import { registerDefinitionRoutes } from './definitions';
-import { registerSkillDefinitionRoutes } from './skill-definitions';
-import { attachCliServer, registerCliRoutes } from './pty';
-import { attachEventsServer } from './events';
+import { app } from './app';
+import { DATA_DIR, PIPELINES_DIR } from './config/constants';
+import { initPortForwards } from './services/portForward';
+import { attachCliServer } from './routes/pty';
+import { attachEventsServer } from './services/events';
 
 const PORT = 8080;
-const DATA_DIR = '/data';
-const PIPELINES_DIR = path.join(DATA_DIR, 'pipelines');
-
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-
-registerRoutes(app);
-registerInsightsRoutes(app);
-registerDefinitionRoutes(app);
-registerSkillDefinitionRoutes(app);
-registerCliRoutes(app);
 
 // Ensure data directories exist
 fs.mkdirSync(PIPELINES_DIR, { recursive: true });
