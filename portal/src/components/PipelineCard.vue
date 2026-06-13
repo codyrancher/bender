@@ -167,11 +167,11 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
           <span class="run-status-text" :class="run.status">{{ run.status }}</span>
           <button
             class="run-md-btn"
-            title="View pipeline.md as it was for this run"
+            title="View pipeline.yaml as it was for this run"
             @click.stop="emit('view-pipeline-md', run)"
           >
             <FileLinesIcon width="11" height="11" />
-            pipeline.md
+            pipeline.yaml
           </button>
           <span class="run-time">{{ formatTime(run.started_at) }}</span>
           <span class="run-duration">{{ runDuration(run, now) }}</span>

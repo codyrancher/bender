@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, renderString } from './services/templates';
 import { extractPipelineFlags } from './utils/pipelineFlags';
 import { broadcast } from './services/events';
-import { materializeInto as materializeDefinition, writeDefinition, getDefinition, parseArgs } from './services/definitions';
+import { materializeInto as materializeDefinition, writeDefinition, getDefinition } from './services/definitions';
 
 import {
   PIPELINES_DIR, COMPOSE_PROJECT, CLAUDE_CONFIG_DIR, STAGE_TIMEOUT_MS, BENDER_IMAGE,
@@ -17,7 +17,7 @@ import { Settings, PortRange, readSettings, writeSettings, getExternalIp, envKey
 import { readGithubToken, credentialEnvArgs } from './services/credentials';
 import { getContainerStatus, getContainerIp, waitForContainerIp, chownRecursive } from './utils/container';
 import { BenderJson, readBenderJson, pipelineUid, pipelineArgEnvArgs } from './services/benderJson';
-import { PipelineStage, parsePipelineStages, resolveGraph, readPipelineStages } from './utils/pipelineParser';
+import { PipelineStage, parsePipelineStages, resolveGraph, readPipelineStages, parsePipelineArgs } from './utils/pipelineParser';
 import { snapshotDir, snapshotWorkspace, restoreWorkspace } from './services/snapshots';
 import { getSidecarContainerNames, startSidecars, stopSidecars, removeSidecars } from './services/sidecars';
 import {
@@ -106,7 +106,7 @@ export function registerRoutes(app: Express): void {
         materializeDefinition(req.body.definitionId, projectPath);
         chownRecursive(projectPath, 1000, 1000);
       } else if (req.body.pipelineMd) {
-        const mdPath = path.join(projectPath, 'pipeline.md');
+        const mdPath = path.join(projectPath, 'pipeline.yaml');
         fs.writeFileSync(mdPath, req.body.pipelineMd);
         fs.chownSync(mdPath, 1000, 1000);
       }
@@ -578,7 +578,7 @@ export function registerRoutes(app: Express): void {
       const db = getRunsDb();
       const row = db.prepare('SELECT pipeline_md FROM pipeline_runs WHERE id = ?').get(Number(req.params.runId)) as { pipeline_md: string | null } | undefined;
       if (!row) return res.status(404).json({ error: 'Run not found' });
-      res.type('text/markdown').send(row.pipeline_md || '');
+      res.type('text/yaml').send(row.pipeline_md || '');
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
@@ -619,7 +619,7 @@ export function registerRoutes(app: Express): void {
       // so run history shows exactly what was executed (read-only, immutable).
       let pipelineMdSnapshot = '';
       try {
-        const mdPath = path.join(pipelineDir, 'pipeline.md');
+        const mdPath = path.join(pipelineDir, 'pipeline.yaml');
         if (fs.existsSync(mdPath)) pipelineMdSnapshot = fs.readFileSync(mdPath, 'utf-8');
       } catch { /* ignore */ }
 
@@ -771,7 +771,7 @@ export function registerRoutes(app: Express): void {
 
       let pipelineMdSnapshot = '';
       try {
-        const mdPath = path.join(pipelineDir, 'pipeline.md');
+        const mdPath = path.join(pipelineDir, 'pipeline.yaml');
         if (fs.existsSync(mdPath)) pipelineMdSnapshot = fs.readFileSync(mdPath, 'utf-8');
       } catch { /* ignore */ }
 
@@ -854,9 +854,9 @@ export function registerRoutes(app: Express): void {
     try {
       const dir = path.join(PIPELINES_DIR, req.params.name);
       if (!fs.existsSync(dir)) return res.status(404).json({ error: 'Pipeline not found' });
-      const mdPath = path.join(dir, 'pipeline.md');
+      const mdPath = path.join(dir, 'pipeline.yaml');
       const md = fs.existsSync(mdPath) ? fs.readFileSync(mdPath, 'utf-8') : '';
-      const declared = parseArgs(md);
+      const declared = parsePipelineArgs(md);
       const current = readBenderJson(req.params.name)?.args || {};
       const args = declared.map(a => ({
         name: a.name,
@@ -909,9 +909,9 @@ export function registerRoutes(app: Express): void {
     try {
       const pipeline = req.params.name;
       const pipelineDir = path.join(PIPELINES_DIR, pipeline);
-      const mdPath = path.join(pipelineDir, 'pipeline.md');
+      const mdPath = path.join(pipelineDir, 'pipeline.yaml');
       if (!fs.existsSync(mdPath)) {
-        return res.status(404).json({ error: 'Pipeline has no pipeline.md' });
+        return res.status(404).json({ error: 'Pipeline has no pipeline.yaml' });
       }
       const definitionId = (req.body.definitionId || pipeline).trim();
       const message = (req.body.message || `Update ${definitionId} from ${pipeline}`).trim();

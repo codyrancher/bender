@@ -1,6 +1,6 @@
-// Client-side mirror of the backend pipeline.md parser (parsePipelineStages +
-// resolveGraph): captures stages, skills, success criteria and Next edges, then
-// resolves successor names to indices (linear default when no edges declared).
+// Client-side parser for a pipeline.yaml definition: stages + a resolved
+// successor graph. Mirrors the backend parser (utils/pipelineParser.ts).
+import { parse as parseYaml } from 'yaml'
 
 export interface ParsedStage {
   name: string
@@ -10,24 +10,24 @@ export interface ParsedStage {
   next: number[]
 }
 
-export function parsePipeline(md: string): { stages: ParsedStage[]; unresolved: Array<{ stage: string; target: string }> } {
-  const lines = (md || '').split('\n')
-  const stages: ParsedStage[] = []
-  let cur: ParsedStage | null = null
-  let desc: string[] = []
-  const flush = () => { if (cur) { stages.push(cur) } }
-  for (const line of lines) {
-    const m = line.match(/^###\s+\d+\.\s+(.+)/)
-    if (m) { flush(); cur = { name: m[1].trim(), skill: '', successCriteria: '', nextNames: [], next: [] }; desc = []; continue }
-    if (cur) {
-      let mm: RegExpMatchArray | null
-      if ((mm = line.match(/^\*\*Skill:\*\*\s*(.+)/))) { cur.skill = mm[1].trim(); continue }
-      if ((mm = line.match(/^\*\*Success Criteria:\*\*\s*(.+)/))) { cur.successCriteria = mm[1].trim(); continue }
-      if ((mm = line.match(/^\*\*Next:\*\*\s*(.+)/))) { cur.nextNames = mm[1].split(',').map(s => s.trim()).filter(Boolean); continue }
-      const t = line.trim(); if (t) desc.push(t)
-    }
-  }
-  flush()
+export function parsePipeline(text: string): { stages: ParsedStage[]; unresolved: Array<{ stage: string; target: string }> } {
+  let doc: any
+  try { doc = parseYaml(text) } catch { doc = null }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) doc = {}
+
+  const stages: ParsedStage[] = (Array.isArray(doc.stages) ? doc.stages : [])
+    .map((s: any): ParsedStage => ({
+      name: String(s?.name ?? '').trim(),
+      skill: String(s?.skill ?? '').trim(),
+      successCriteria: String(s?.successCriteria ?? s?.success_criteria ?? '').trim(),
+      nextNames: Array.isArray(s?.next)
+        ? s.next.map((n: any) => String(n).trim()).filter(Boolean)
+        : (s?.next != null && String(s.next).trim() ? [String(s.next).trim()] : []),
+      next: [],
+    }))
+    .filter((s: ParsedStage) => s.name)
+
+  // resolve successor names → indices; default to linear when none declared
   const byName = new Map<string, number>()
   stages.forEach((s, i) => byName.set(s.name.toLowerCase(), i))
   const anyEdges = stages.some(s => s.nextNames.length)
@@ -43,5 +43,6 @@ export function parsePipeline(md: string): { stages: ParsedStage[]; unresolved: 
       s.next = i < stages.length - 1 ? [i + 1] : []
     }
   })
+
   return { stages, unresolved }
 }

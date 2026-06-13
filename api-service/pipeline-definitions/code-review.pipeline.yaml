@@ -1,0 +1,33 @@
+name: Code Review Pipeline
+description: A pipeline that takes source code through a full review process. After linting it forks into Test, Security Scan, and Review running in parallel, which then join at the Report stage.
+stages:
+  - name: Lint
+    skill: static-analysis
+    successCriteria: Zero linting errors and no unresolved warnings above severity threshold
+    next:
+      - Test
+      - Security Scan
+      - Review
+    description: Run linters and static analysis tools against the codebase. Flag style violations, unused imports, and common anti-patterns.
+  - name: Test
+    skill: test-runner
+    successCriteria: All tests pass with coverage above configured minimum threshold
+    next:
+      - Report
+    description: Execute the project's test suite. Collect coverage reports and flag any failing or flaky tests.
+  - name: Security Scan
+    skill: security-audit
+    successCriteria: No critical or high severity vulnerabilities found in dependencies or source
+    next:
+      - Report
+    description: Scan dependencies for known vulnerabilities. Check for hardcoded secrets, injection risks, and OWASP top-10 issues.
+  - name: Review
+    skill: code-review
+    successCriteria: All review comments addressed and at least one approval received
+    next:
+      - Report
+    description: Perform a detailed code review. Evaluate readability, architecture, error handling, and adherence to project conventions.
+  - name: Report
+    skill: summary-report
+    successCriteria: Final report generated with all findings categorized by severity
+    description: Compile findings from all previous stages into a structured report with severity ratings and actionable recommendations.

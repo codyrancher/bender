@@ -196,10 +196,10 @@ const stageDetail = computed(() => {
   return { pipeline: sel.pipeline, stageIndex: sel.stageIndex, defStage, record, run }
 })
 
-// Read-only snapshot of pipeline.md as it was when a run started
+// Read-only snapshot of pipeline.yaml as it was when a run started
 function viewPipelineMd(pipeline: string, run: PipelineRun) {
   viewers.value?.openFile({
-    name: 'pipeline.md',
+    name: 'pipeline.yaml',
     url: `/api/pipelines/${pipeline}/runs/${run.id}/pipeline-md`,
     subtitle: `run #${runNo(run)} · read-only snapshot`,
   })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Edits one pipeline definition: a live graph preview, the pipeline.md editor
+// Edits one pipeline definition: a live graph preview, the pipeline.yaml editor
 // (parsed + validated, with quick-create for missing skills), the CLAUDE.md
 // editor, and the bundled-skills list. Owns the working copies + parse/validation
 // (the graph and the editor share them) and emits `saved` after a commit.
@@ -14,7 +14,8 @@ interface DefDetail { id: string; name: string; content: string; stages: any[]; 
 const props = defineProps<{ detail: DefDetail }>()
 const emit = defineEmits<{ (e: 'saved'): void }>()
 
-const STAGE_HEADER = /^###\s+\d+\.\s+/
+// A stage entry in pipeline.yaml: a list item with a `name:` key.
+const STAGE_HEADER = /^\s*-\s+name:/
 
 const editMd = ref('')
 const mdTextarea = ref<HTMLTextAreaElement | null>(null)
@@ -59,10 +60,10 @@ const validation = computed(() => {
   const errors: string[] = []
   let missingSkills: string[] = []
   if (!stages.length) {
-    errors.push('No stages found. Add one with "### 1. Stage Name".')
+    errors.push('No stages found. Add a `stages:` list.')
   } else {
     const noSkill = stages.filter(s => !s.skill).map(s => s.name)
-    if (noSkill.length) errors.push(`Missing **Skill:** on stage(s): ${noSkill.join(', ')}.`)
+    if (noSkill.length) errors.push(`Missing skill on stage(s): ${noSkill.join(', ')}.`)
 
     for (const u of unresolved) errors.push(`Stage "${u.stage}" → unknown **Next:** target "${u.target}".`)
 
@@ -174,7 +175,7 @@ function jumpToStage(index: number) {
       <div class="defs-section-title defs-editor-head">
         <Tabs
           v-model="editorTab"
-          :tabs="[{ key: 'pipeline', label: 'pipeline.md', dirty }, { key: 'claude', label: 'CLAUDE.md', dirty: claudeDirty }]"
+          :tabs="[{ key: 'pipeline', label: 'pipeline.yaml', dirty }, { key: 'claude', label: 'CLAUDE.md', dirty: claudeDirty }]"
         />
         <span v-if="editorTab === 'pipeline'" class="defs-hint">— edit the definition; validated on save</span>
         <span v-else class="defs-hint">— the agent's instructions at run time (replaces the template's)</span>
@@ -201,14 +202,14 @@ function jumpToStage(index: number) {
         </div>
       </div>
 
-      <!-- pipeline.md editor -->
+      <!-- pipeline.yaml editor -->
       <div v-show="editorTab === 'pipeline'">
         <textarea
           ref="mdTextarea"
           v-model="editMd"
           class="pdef-textarea"
           spellcheck="false"
-          placeholder="# Pipeline Name&#10;&#10;## Stages&#10;&#10;### 1. Build&#10;**Skill:** build&#10;**Success Criteria:** compiles cleanly&#10;**Next:** Test, Lint"
+          placeholder="name: My Pipeline&#10;stages:&#10;  - name: Build&#10;    skill: build&#10;    successCriteria: compiles cleanly&#10;    next: [Test, Lint]"
         ></textarea>
 
         <div class="pdef-validation" :class="validation.ok ? 'ok' : 'bad'">
@@ -288,7 +289,7 @@ function jumpToStage(index: number) {
 
 .defs-empty { font-size: 12px; color: var(--color-text-muted); }
 
-/* ── pipeline.md / CLAUDE.md editor ── */
+/* ── pipeline.yaml / CLAUDE.md editor ── */
 .pdef-textarea {
   width: 100%;
   min-height: 280px;

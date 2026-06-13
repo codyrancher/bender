@@ -11,4 +11,4 @@ thin wrappers around a system call). No app state; safe to import anywhere.
 | `http.ts` | `HttpError` (throw to return a specific status) + `asyncHandler` (wraps a handler so it needs no try/catch — maps `HttpError`→status, anything else→500). This is what keeps the route files to ~1 line per endpoint. |
 | `id.ts` | `hexId(len)` — short random hex id (pipeline UIDs, login session ids). |
 | `pipelineFlags.ts` | Parse keyword flags (pr-#, issue-#, prime) out of a pipeline's name. |
-| `pipelineParser.ts` | Parse a `pipeline.md` into stages + resolve the successor graph (`parsePipelineStages`, `resolveGraph`, `readPipelineStages`). |
+| `pipelineParser.ts` | Parse a `pipeline.yaml` into a typed spec (stages + resolved successor graph, args) and validate it (`parsePipelineSpec`, `validatePipeline`, `resolveGraph`, `readPipelineStages`); plus `markdownToYaml` for the one-time legacy migration. |

@@ -7,6 +7,7 @@ import { DATA_DIR, PIPELINES_DIR } from './config/constants';
 import { initPortForwards } from './services/portForward';
 import { attachCliServer } from './services/cli';
 import { attachEventsServer } from './services/events';
+import { migratePipelineMdToYaml } from './services/migrate';
 
 const PORT = 8080;
 
@@ -14,6 +15,9 @@ const PORT = 8080;
 fs.mkdirSync(PIPELINES_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'credentials'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'config'), { recursive: true });
+
+// One-time: convert legacy pipeline.md definitions/instances to pipeline.yaml.
+migratePipelineMdToYaml();
 
 const server = http.createServer(app);
 attachCliServer(server);

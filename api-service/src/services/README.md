@@ -10,7 +10,8 @@ call into them.
 | `settings.ts` | Read/write the settings file (`portRange`, key overrides), env-sourced keys (`envKeys`), and the cached `getExternalIp`. |
 | `credentials.ts` | Read the GitHub token and build the `-e KEY=value` docker args that forward credentials into pipeline containers. |
 | `benderJson.ts` | Read a pipeline instance's `.bender.json` metadata; derive its UID and env args. |
-| `definitions.ts` | The git-backed pipeline-definitions repo: list/get/write/delete, history/diff, validate, `materializeInto` a workspace, and `createDefinition`/`updateDefinition` orchestration. |
+| `definitions.ts` | The git-backed pipeline-definitions repo (each is a `pipeline.yaml` + bundled skills): list/get/write/delete, history/diff, validate, `materializeInto` a workspace, and `createDefinition`/`updateDefinition` orchestration. |
+| `migrate.ts` | Idempotent startup migrations — currently converting any legacy `pipeline.md` definitions/instances to `pipeline.yaml`. |
 | `skillDefinitions.ts` | The git-backed global skill-definitions repo: list/get/write/delete, history/diff, and `createSkillDefinition`/`updateSkillDefinition` orchestration. |
 | `templates.ts` | Pipeline templates: scaffold a workspace, read template metadata/vars/sidecars, Handlebars rendering. |
 | `sidecars.ts` | Sidecar container lifecycle (browser/rancher/…): create with the right network/env/volumes, start, stop, remove. |
