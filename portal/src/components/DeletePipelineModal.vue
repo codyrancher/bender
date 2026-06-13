@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { usePipelineId } from '@/composables/route'
+import { useScrollToBottom } from '@/composables/useScrollToBottom'
 import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 
@@ -15,6 +16,7 @@ const uiStore = useUiStore()
 const isDeleting = ref(false)
 const logs = ref<string[]>([])
 const logContainer = ref<HTMLElement | null>(null)
+useScrollToBottom(logContainer, () => logs.value.length)
 
 watch(
   () => uiStore.deletePipelineName,
@@ -28,11 +30,6 @@ watch(
 
 function appendLog(message: string) {
   logs.value.push(message)
-  nextTick(() => {
-    if (logContainer.value) {
-      logContainer.value.scrollTop = logContainer.value.scrollHeight
-    }
-  })
 }
 
 // Closing is blocked while a delete is streaming.

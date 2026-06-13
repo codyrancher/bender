@@ -2,9 +2,10 @@
 // Stage detail modal: skill/description/criteria, status, live-browser stream,
 // timing, logs, and artifacts for a selected stage. Artifact "open" actions are
 // emitted as payloads — the page renders the full-viewport viewers.
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { getBrowserUrl } from '@/services/urls'
+import { useScrollToBottom } from '@/composables/useScrollToBottom'
 import type { PipelineStage, PipelineStageRecord, PipelineRun, Artifact } from '@/types'
 import Modal from './primitives/Modal.vue'
 import MaximizeIcon from '@/assets/icons/maximize.svg?component'
@@ -90,11 +91,7 @@ function openDiff(art: Artifact) {
 
 // Keep the log view pinned to the newest line as logs stream in.
 const logsEl = ref<HTMLElement | null>(null)
-watch(() => props.detail.record?.logs, () => {
-  nextTick(() => {
-    if (logsEl.value) logsEl.value.scrollTop = logsEl.value.scrollHeight
-  })
-})
+useScrollToBottom(logsEl, () => props.detail.record?.logs)
 </script>
 
 <template>

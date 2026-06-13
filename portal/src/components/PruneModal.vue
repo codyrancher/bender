@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Docker system-prune modal: runs the prune, streams its log lines, and emits
 // `pruned` on success so the opener can refresh anything affected (disk stats).
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 import { api } from '@/services/api'
+import { useScrollToBottom } from '@/composables/useScrollToBottom'
 import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 
@@ -12,6 +13,7 @@ const emit = defineEmits<{ (e: 'update:open', value: boolean): void; (e: 'pruned
 const running = ref(false)
 const logs = ref<string[]>([])
 const logContainer = ref<HTMLElement | null>(null)
+useScrollToBottom(logContainer, () => logs.value.length)
 
 async function runPrune() {
   if (running.value) return
@@ -20,11 +22,6 @@ async function runPrune() {
   try {
     await api.systemPrune((msg) => {
       logs.value.push(msg)
-      nextTick(() => {
-        if (logContainer.value) {
-          logContainer.value.scrollTop = logContainer.value.scrollHeight
-        }
-      })
     })
     logs.value.push('--- Prune complete ---')
     emit('pruned')

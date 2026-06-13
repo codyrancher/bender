@@ -5,6 +5,7 @@ import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
+import { pollUrl } from '@/utils/pollUrl'
 import Spinner from './primitives/Spinner.vue'
 import PlayIcon from '@/assets/icons/play.svg?component'
 import HarnessIframeView from './HarnessIframeView.vue'
@@ -41,18 +42,6 @@ function isViewLoaded(pipelineName: string, view: string) {
 
 function onIframeLoad(pipelineName: string, view: string) {
   loadedViews.value.add(viewKey(pipelineName, view))
-}
-
-async function pollUrl(url: string): Promise<boolean> {
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
-    const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
-    clearTimeout(timeoutId)
-    return response.status < 500
-  } catch {
-    return false
-  }
 }
 
 function startPolling(pipelineName: string, view: string, url: string) {

@@ -2,6 +2,7 @@
 // Commit history for a skill definition, with a diff viewer opened per commit.
 import { ref, computed } from 'vue'
 import { api } from '@/services/api'
+import { shortDateTime } from '@/utils/datetime'
 import DiffViewer from './primitives/DiffViewer.vue'
 
 const props = defineProps<{
@@ -24,11 +25,6 @@ function openDiffAt(index: number) {
   diffInitial.value = index
   diffOpen.value = true
 }
-
-function shortDate(iso: string): string {
-  try { return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
-  catch { return iso }
-}
 </script>
 
 <template>
@@ -43,7 +39,7 @@ function shortDate(iso: string): string {
       >
         <span class="skills-commit-sha">{{ c.sha.slice(0, 7) }}</span>
         <span class="skills-commit-msg">{{ c.message }}</span>
-        <span class="skills-commit-date">{{ shortDate(c.date) }}</span>
+        <span class="skills-commit-date">{{ shortDateTime(c.date) }}</span>
       </button>
       <div v-if="!history.length" class="skills-empty">No commits</div>
     </div>

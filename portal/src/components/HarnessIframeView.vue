@@ -2,10 +2,12 @@
 // The harness dev VS Code iframe plus its overlays (working/not-running/loading).
 // Always mounted so the iframe survives navigating away (shown only when on the
 // harness route, via the `active` class) — never v-if'd out, or it would reload.
-import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useIsHarness } from '@/composables/route'
 import { getVscodeUrl } from '@/services/urls'
+import { pollUrl } from '@/utils/pollUrl'
+import { useScrollToBottom } from '@/composables/useScrollToBottom'
 import Spinner from './primitives/Spinner.vue'
 import PlayIcon from '@/assets/icons/play.svg?component'
 
@@ -18,28 +20,10 @@ const logs = computed(() => pipelinesStore.harnessLogs)
 const vscodeUrl = getVscodeUrl('bender-dev')
 const vscodeReady = ref(false)
 const vscodeLoaded = ref(false)
-const logsContainer = ref<HTMLElement | null>(null)
 
 // Auto-scroll logs to the bottom as they stream in.
-watch(logs, () => {
-  nextTick(() => {
-    if (logsContainer.value) {
-      logsContainer.value.scrollTop = logsContainer.value.scrollHeight
-    }
-  })
-}, { deep: true })
-
-async function pollUrl(url: string): Promise<boolean> {
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
-    const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
-    clearTimeout(timeoutId)
-    return response.status < 500
-  } catch {
-    return false
-  }
-}
+const logsContainer = ref<HTMLElement | null>(null)
+useScrollToBottom(logsContainer, () => logs.value.length)
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
