@@ -10,8 +10,8 @@ shape the response. Registered from `app.ts`.
 
 | File | Purpose |
 |------|---------|
-| `definitions.ts` | Pipeline-definition CRUD (the `pipeline.md` + bundled skills + `CLAUDE.md` that an instance is created from) and the materialize/parse helpers reused elsewhere. |
-| `skill-definitions.ts` | Global skill-definition CRUD (the reusable `.claude/skills` library + history). |
+| `definitions.ts` | Pipeline-definition endpoints (CRUD + history/diff) — thin handlers over `services/definitions`. |
+| `skill-definitions.ts` | Global skill-definition endpoints (CRUD + history/diff) — thin handlers over `services/skillDefinitions`. |
 | `insights.ts` | The insights DB browser — list tables, run ad-hoc SQL, delete rows. |
 | `pty.ts` | The global Claude CLI terminal: the `/api/cli/*` routes (uploads, CLAUDE.md) and the PTY websocket server. |
 | `harness.ts` | Self-hosted dev harness — clone the source and run a dev VS Code + dev API + HMR portal, then promote/abandon. Actions stream SSE logs. |

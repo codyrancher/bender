@@ -10,6 +10,8 @@ call into them.
 | `settings.ts` | Read/write the settings file (`portRange`, key overrides), env-sourced keys (`envKeys`), and the cached `getExternalIp`. |
 | `credentials.ts` | Read the GitHub token and build the `-e KEY=value` docker args that forward credentials into pipeline containers. |
 | `benderJson.ts` | Read a pipeline instance's `.bender.json` metadata; derive its UID and env args. |
+| `definitions.ts` | The git-backed pipeline-definitions repo: list/get/write/delete, history/diff, validate, `materializeInto` a workspace, and `createDefinition`/`updateDefinition` orchestration. |
+| `skillDefinitions.ts` | The git-backed global skill-definitions repo: list/get/write/delete, history/diff, and `createSkillDefinition`/`updateSkillDefinition` orchestration. |
 | `templates.ts` | Pipeline templates: scaffold a workspace, read template metadata/vars/sidecars, Handlebars rendering. |
 | `sidecars.ts` | Sidecar container lifecycle (browser/rancher/…): create with the right network/env/volumes, start, stop, remove. |
 | `portForward.ts` | Public port forwarding — allocate a port from the configured range and run a `socat` container per forward. |
