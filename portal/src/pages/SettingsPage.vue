@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { api } from '@/services/api'
 import { useUiStore } from '@/stores/ui'
 import type { PortRange, PortAllocation } from '@/types'
-import InsightsPanel from '../InsightsPanel.vue'
+import InsightsPanel from '../components/InsightsPanel.vue'
 import CloseIcon from '@/assets/icons/close.svg?component'
 
 const uiStore = useUiStore()

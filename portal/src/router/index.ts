@@ -1,12 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { ViewMode } from '@/types'
-import PipelinesPage from '@/components/pages/PipelinesPage.vue'
-import VscodePage from '@/components/pages/VscodePage.vue'
-import BrowserPage from '@/components/pages/BrowserPage.vue'
-import SplitPage from '@/components/pages/SplitPage.vue'
-import HarnessPage from '@/components/pages/HarnessPage.vue'
-import SettingsPage from '@/components/pages/SettingsPage.vue'
-import DefinitionsBrowser from '@/components/pages/DefinitionsBrowser.vue'
+import PipelinesPage from '@/pages/PipelinesPage.vue'
+import VscodePage from '@/pages/VscodePage.vue'
+import BrowserPage from '@/pages/BrowserPage.vue'
+import SplitPage from '@/pages/SplitPage.vue'
+import HarnessPage from '@/pages/HarnessPage.vue'
+import SettingsPage from '@/pages/SettingsPage.vue'
+import DefinitionsBrowser from '@/pages/DefinitionsBrowser.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL || '/'),

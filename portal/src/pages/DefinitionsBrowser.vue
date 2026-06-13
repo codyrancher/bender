@@ -2,14 +2,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
-import DiffViewer from '../primitives/DiffViewer.vue'
-import PipelineGraph from '../PipelineGraph.vue'
-import Tabs from '../primitives/Tabs.vue'
-import Modal from '../primitives/Modal.vue'
-import Button from '../primitives/Button.vue'
-import FormField from '../primitives/FormField.vue'
-import StatePanel from '../primitives/StatePanel.vue'
-import SkillDefinitionsPanel from '../SkillDefinitionsPanel.vue'
+import DiffViewer from '../components/primitives/DiffViewer.vue'
+import PipelineGraph from '../components/PipelineGraph.vue'
+import Tabs from '../components/primitives/Tabs.vue'
+import Modal from '../components/primitives/Modal.vue'
+import Button from '../components/primitives/Button.vue'
+import FormField from '../components/primitives/FormField.vue'
+import StatePanel from '../components/primitives/StatePanel.vue'
+import SkillDefinitionsPanel from '../components/SkillDefinitionsPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
