@@ -8,7 +8,7 @@ import Toast from '@/components/Toast.vue'
 import DropOverlay from '@/components/DropOverlay.vue'
 import NewPipelineModal from '@/components/NewPipelineModal.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
-import TerminalDrawer from '@/components/TerminalDrawer.vue'
+import ClaudeCliPage from '@/components/ClaudeCliPage.vue'
 
 const pipelineId = usePipelineId()
 const pipelinesStore = usePipelinesStore()
@@ -39,7 +39,7 @@ onMounted(async () => {
   <div class="main-content">
     <router-view />
   </div>
-  <TerminalDrawer />
+  <ClaudeCliPage />
   <TabBar />
   <Toast />
   <DropOverlay />
