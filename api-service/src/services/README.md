@@ -18,4 +18,7 @@ call into them.
 | `snapshots.ts` | Per-stage workspace snapshots (rsync, hardlink-deduped) so a stage can be re-run from its exact starting state. |
 | `initScripts.ts` | Run a project's `init.sh` / `on-sidecars-up.sh` hook scripts inside its container. |
 | `runExecutor.ts` | The run-execution engine: owns the runs SQLite DB and the fork/join executor that runs each stage's skill via the Claude CLI, streams logs, reads the success verdict, and collects artifacts. |
+| `insights.ts` | The insights SQLite DB + its read/query/delete operations (the DB browser). |
+| `harness.ts` | The self-hosted dev-harness operations (status + start/rebuild/promote/abandon); each streams progress through a `send(type, message?)` emitter. |
+| `cli.ts` | The global Claude CLI terminal: workspace/credential setup, CLAUDE.md + upload file ops, and the persistent tmux+claude PTY websocket (`attachCliServer`). |
 | `events.ts` | The websocket event bus — `broadcast(event, data)` pushes live updates (pipeline/run changes) to connected clients; `attachEventsServer` mounts the ws server. |

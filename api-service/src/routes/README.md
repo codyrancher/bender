@@ -12,6 +12,6 @@ shape the response. Registered from `app.ts`.
 |------|---------|
 | `definitions.ts` | Pipeline-definition endpoints (CRUD + history/diff) — thin handlers over `services/definitions`. |
 | `skill-definitions.ts` | Global skill-definition endpoints (CRUD + history/diff) — thin handlers over `services/skillDefinitions`. |
-| `insights.ts` | The insights DB browser — list tables, run ad-hoc SQL, delete rows. |
-| `pty.ts` | The global Claude CLI terminal: the `/api/cli/*` routes (uploads, CLAUDE.md) and the PTY websocket server. |
-| `harness.ts` | Self-hosted dev harness — clone the source and run a dev VS Code + dev API + HMR portal, then promote/abandon. Actions stream SSE logs. |
+| `insights.ts` | Insights DB browser endpoints — thin handlers over `services/insights`. |
+| `pty.ts` | The `/api/cli/*` endpoints (uploads, CLAUDE.md) — thin handlers over `services/cli`. (The PTY websocket itself is attached from `server.ts` via `services/cli`.) |
+| `harness.ts` | Dev-harness endpoints — status (JSON) + start/rebuild/promote/abandon, which stream `services/harness` progress as SSE. |
