@@ -1,21 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute } from '@/router'
+import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 import Spinner from './primitives/Spinner.vue'
 import PlayIcon from '@/assets/icons/play.svg?component'
 
-const route = useRoute()
 const router = useRouter()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 
-const pipelineId = computed(() => getPipelineIdFromRoute(route))
-const viewMode = computed(() => getViewModeFromRoute(route))
-const isHarness = computed(() => isHarnessRoute(route))
+const pipelineId = usePipelineId()
+const viewMode = useViewMode()
+const isHarness = useIsHarness()
 const harnessDevRunning = computed(() => pipelinesStore.harnessStatus.devRunning)
 const harnessOperationActive = computed(() => pipelinesStore.harnessOperationActive)
 const harnessLogs = computed(() => pipelinesStore.harnessLogs)

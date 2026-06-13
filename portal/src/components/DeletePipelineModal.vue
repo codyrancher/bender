@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { getPipelineIdFromRoute } from '@/router'
+import { usePipelineId } from '@/composables/route'
 import Button from './primitives/Button.vue'
 
 const router = useRouter()
-const route = useRoute()
+const pipelineId = usePipelineId()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 
@@ -39,7 +39,7 @@ async function handleDelete() {
   if (!name || isDeleting.value) return
 
   isDeleting.value = true
-  const wasActive = getPipelineIdFromRoute(route) === name
+  const wasActive = pipelineId.value === name
   try {
     await pipelinesStore.deletePipeline(name, appendLog)
     uiStore.closeDeletePipelineModal()

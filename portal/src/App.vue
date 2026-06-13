@@ -1,52 +1,34 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onMounted, watch } from 'vue'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { getPipelineIdFromRoute, isHarnessRoute } from '@/router'
+import { usePipelineId } from '@/composables/route'
 import TabBar from '@/components/TabBar.vue'
-import Toolbar from '@/components/Toolbar.vue'
-import IFrameContainer from '@/components/IFrameContainer.vue'
-import SettingsPage from '@/components/SettingsPage.vue'
 import Toast from '@/components/Toast.vue'
 import DropOverlay from '@/components/DropOverlay.vue'
 import NewPipelineModal from '@/components/NewPipelineModal.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
 import TerminalDrawer from '@/components/TerminalDrawer.vue'
-import PipelinesPage from '@/components/PipelinesPage.vue'
-import DefinitionsBrowser from '@/components/DefinitionsBrowser.vue'
 
-const route = useRoute()
-const router = useRouter()
+const pipelineId = usePipelineId()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 
-const isHome = computed(() => route.name === 'home')
-const isSettings = computed(() => route.name === 'settings')
-const isDefinitions = computed(() => route.name === 'definitions')
-
-watch(
-  () => getPipelineIdFromRoute(route),
-  async (pipelineId) => {
-    if (pipelineId) {
-      await pipelinesStore.loadPipeline(pipelineId)
-    }
+watch(pipelineId, async (id) => {
+  if (id) {
+    await pipelinesStore.loadPipeline(id)
   }
-)
+})
 
 onMounted(async () => {
   await pipelinesStore.fetchPipelines()
   pipelinesStore.connectEvents()
   pipelinesStore.fetchPortForwards()
 
-  const pipelineId = getPipelineIdFromRoute(route)
-
-  if (isHarnessRoute(route)) {
-    uiStore.hideLoading()
-  } else if (pipelineId) {
-    await pipelinesStore.loadPipeline(pipelineId)
-  } else if (route.name === 'settings' || route.name === 'definitions') {
-    uiStore.hideLoading()
+  // The pipeline routes load their pipeline (which clears the loading overlay);
+  // every other route has nothing to load, so drop the overlay immediately.
+  if (pipelineId.value) {
+    await pipelinesStore.loadPipeline(pipelineId.value)
   } else {
     uiStore.hideLoading()
   }
@@ -55,13 +37,7 @@ onMounted(async () => {
 
 <template>
   <div class="main-content">
-    <PipelinesPage v-if="isHome" />
-    <div v-show="!isHome && !isSettings && !isDefinitions" class="iframe-pane">
-      <Toolbar />
-      <IFrameContainer />
-    </div>
-    <SettingsPage v-if="isSettings" />
-    <DefinitionsBrowser v-if="isDefinitions" @close="router.push('/')" />
+    <router-view />
   </div>
   <TerminalDrawer />
   <TabBar />
@@ -134,13 +110,6 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 0;
-}
-
-.iframe-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
 }
 </style>

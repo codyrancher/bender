@@ -1,15 +1,13 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { api } from '@/services/api'
-import { getPipelineIdFromRoute } from '@/router'
+import { usePipelineId } from '@/composables/route'
 
-const route = useRoute()
 const uiStore = useUiStore()
 const dragCounter = ref(0)
 
-const currentPipelineId = computed(() => getPipelineIdFromRoute(route))
+const currentPipelineId = usePipelineId()
 
 async function handleImageDrop(file: File) {
   if (!file.type.startsWith('image/')) {

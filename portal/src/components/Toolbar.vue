@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { RouterLink } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { getPipelineIdFromRoute, getViewModeFromRoute, isHarnessRoute } from '@/router'
+import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 import ExternalLinkIcon from '@/assets/icons/external-link.svg?component'
 import GlobeIcon from '@/assets/icons/globe.svg?component'
@@ -15,14 +15,13 @@ import StopIcon from '@/assets/icons/stop.svg?component'
 import PlayIcon from '@/assets/icons/play.svg?component'
 import SpinnerIcon from '@/assets/icons/spinner.svg?component'
 
-const route = useRoute()
 const router = useRouter()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 
-const isHarness = computed(() => isHarnessRoute(route))
-const pipelineId = computed(() => getPipelineIdFromRoute(route))
-const viewMode = computed(() => getViewModeFromRoute(route))
+const isHarness = useIsHarness()
+const pipelineId = usePipelineId()
+const viewMode = useViewMode()
 const isSplit = computed(() => viewMode.value === 'split')
 const isRunning = computed(() => pipelineId.value ? pipelinesStore.isPipelineRunning(pipelineId.value) : false)
 const pipelineForwards = computed(() =>

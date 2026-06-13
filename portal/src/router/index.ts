@@ -1,12 +1,12 @@
-import { createRouter, createWebHistory, type RouteLocationNormalized } from 'vue-router'
-import { defineComponent } from 'vue'
-
-export type ViewMode = 'vscode' | 'browser' | 'split'
-
-// Empty component since App.vue handles all the rendering
-const EmptyComponent = defineComponent({
-  render: () => null,
-})
+import { createRouter, createWebHistory } from 'vue-router'
+import type { ViewMode } from '@/types'
+import PipelinesPage from '@/components/pages/PipelinesPage.vue'
+import VscodePage from '@/components/pages/VscodePage.vue'
+import BrowserPage from '@/components/pages/BrowserPage.vue'
+import SplitPage from '@/components/pages/SplitPage.vue'
+import HarnessPage from '@/components/pages/HarnessPage.vue'
+import SettingsPage from '@/components/pages/SettingsPage.vue'
+import DefinitionsBrowser from '@/components/pages/DefinitionsBrowser.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL || '/'),
@@ -14,36 +14,38 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: EmptyComponent,
+      component: PipelinesPage,
     },
+    // Each view mode is its own page, but they all compose the shared
+    // PipelineWorkspace component for now.
     {
       path: '/:pipelineId/vscode',
       name: 'vscode',
-      component: EmptyComponent,
+      component: VscodePage,
       meta: { view: 'vscode' as ViewMode },
     },
     {
       path: '/:pipelineId/browser',
       name: 'browser',
-      component: EmptyComponent,
+      component: BrowserPage,
       meta: { view: 'browser' as ViewMode },
     },
     {
       path: '/:pipelineId/split',
       name: 'split',
-      component: EmptyComponent,
+      component: SplitPage,
       meta: { view: 'split' as ViewMode },
     },
     {
       path: '/harness/vscode',
       name: 'harness',
-      component: EmptyComponent,
+      component: HarnessPage,
       meta: { view: 'vscode' as ViewMode, harness: true },
     },
     {
       path: '/settings',
       name: 'settings',
-      component: EmptyComponent,
+      component: SettingsPage,
     },
     {
       // Sub-state in the path so a refresh stays on the same tab/skill/file:
@@ -54,7 +56,7 @@ const router = createRouter({
       //   /definitions/pipelines/:id    → a pipeline definition selected
       path: '/definitions/:tab(pipelines|skills)?/:id?/:file?',
       name: 'definitions',
-      component: EmptyComponent,
+      component: DefinitionsBrowser,
     },
     {
       // Catch-all redirect
@@ -63,17 +65,5 @@ const router = createRouter({
     },
   ],
 })
-
-export function getPipelineIdFromRoute(route: RouteLocationNormalized): string | null {
-  return (route.params.pipelineId as string) || null
-}
-
-export function getViewModeFromRoute(route: RouteLocationNormalized): ViewMode {
-  return (route.meta.view as ViewMode) || 'vscode'
-}
-
-export function isHarnessRoute(route: RouteLocationNormalized): boolean {
-  return route.meta.harness === true
-}
 
 export default router
