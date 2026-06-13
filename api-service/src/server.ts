@@ -5,7 +5,7 @@ import path from 'path';
 import { app } from './app';
 import { DATA_DIR, PIPELINES_DIR } from './config/constants';
 import { initPortForwards } from './services/portForward';
-import { attachCliServer } from './routes/pty';
+import { attachCliServer } from './services/cli';
 import { attachEventsServer } from './services/events';
 
 const PORT = 8080;

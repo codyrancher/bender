@@ -8,6 +8,7 @@ import { registerDefinitionRoutes } from './routes/definitions';
 import { registerSkillDefinitionRoutes } from './routes/skill-definitions';
 import { registerCliRoutes } from './routes/pty';
 import { registerHarnessRoutes } from './routes/harness';
+import { errorHandler } from './utils/http';
 
 export const app = express();
 app.use(cors());
@@ -19,3 +20,6 @@ registerDefinitionRoutes(app);
 registerSkillDefinitionRoutes(app);
 registerCliRoutes(app);
 registerHarnessRoutes(app);
+
+// Maps thrown HttpErrors → status codes (and anything else → 500). Must be last.
+app.use(errorHandler);
