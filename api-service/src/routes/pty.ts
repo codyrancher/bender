@@ -3,8 +3,9 @@
 // server.ts via services/cli's attachCliServer.
 import { Express, Request, Response } from 'express';
 import { asyncHandler, HttpError } from '../utils/http';
+import { MAX_UPLOAD_SIZE } from '../config/cli';
 import {
-  MAX_UPLOAD_SIZE, saveUpload, resolveUploadPath, readClaudeMd, writeClaudeMd, resetClaudeMd,
+  saveUpload, resolveUploadPath, readClaudeMd, writeClaudeMd, resetClaudeMd,
 } from '../services/cli';
 
 export function registerCliRoutes(app: Express): void {
