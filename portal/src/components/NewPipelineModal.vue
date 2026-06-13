@@ -3,6 +3,7 @@ import { ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
+import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 import SearchCombobox from './primitives/SearchCombobox.vue'
 
@@ -86,105 +87,53 @@ async function handleCreate() {
     isCreating.value = false
   }
 }
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter') {
-    handleCreate()
-  } else if (e.key === 'Escape') {
-    uiStore.closeNewPipelineModal()
-  }
-}
-
-let mouseDownOnOverlay = false
-
-function handleOverlayMousedown(e: MouseEvent) {
-  mouseDownOnOverlay = e.target === e.currentTarget
-}
-
-function handleOverlayMouseup(e: MouseEvent) {
-  if (mouseDownOnOverlay && e.target === e.currentTarget) {
-    uiStore.closeNewPipelineModal()
-  }
-  mouseDownOnOverlay = false
-}
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="uiStore.showNewPipelineModal"
-      class="modal-overlay"
-      @mousedown="handleOverlayMousedown"
-      @mouseup="handleOverlayMouseup"
-      @keydown.escape="uiStore.closeNewPipelineModal()"
-    >
-      <div class="modal">
-        <h2>New Pipeline</h2>
-        <div class="selected-template">Rancher</div>
-        <input
-          ref="nameInput"
-          v-model="pipelineName"
-          type="text"
-          placeholder="Project name (e.g., my-project)"
-          autocomplete="off"
-          @keydown="handleKeydown"
+  <Modal v-if="uiStore.showNewPipelineModal" title="New Pipeline" @close="uiStore.closeNewPipelineModal()">
+    <div class="new-pipeline-body">
+      <div class="selected-template">Rancher</div>
+      <input
+        ref="nameInput"
+        v-model="pipelineName"
+        class="name-input"
+        type="text"
+        placeholder="Project name (e.g., my-project)"
+        autocomplete="off"
+        @keydown.enter="handleCreate"
+      />
+      <div class="field-group">
+        <label class="field-label">Rancher Image Tag</label>
+        <SearchCombobox
+          v-model="rancherTag"
+          :options="RANCHER_TAGS"
+          placeholder="e.g. v2.13-head"
+          @submit="handleCreate"
         />
-        <div class="field-group">
-          <label class="field-label">Rancher Image Tag</label>
-          <SearchCombobox
-            v-model="rancherTag"
-            :options="RANCHER_TAGS"
-            placeholder="e.g. v2.13-head"
-            @submit="handleCreate"
-          />
-        </div>
-        <div class="field-group">
-          <label class="field-label">Node Version</label>
-          <SearchCombobox
-            v-model="nodeVersion"
-            :options="NODE_VERSIONS"
-            placeholder="e.g. 24.0.0"
-            @submit="handleCreate"
-          />
-        </div>
-        <div v-if="error" class="error">{{ error }}</div>
-        <div class="modal-buttons">
-          <Button variant="secondary" @click="uiStore.closeNewPipelineModal">Cancel</Button>
-          <Button variant="primary" :disabled="isCreating" @click="handleCreate">
-            {{ isCreating ? 'Creating...' : 'Create' }}
-          </Button>
-        </div>
       </div>
+      <div class="field-group">
+        <label class="field-label">Node Version</label>
+        <SearchCombobox
+          v-model="nodeVersion"
+          :options="NODE_VERSIONS"
+          placeholder="e.g. 24.0.0"
+          @submit="handleCreate"
+        />
+      </div>
+      <div v-if="error" class="error">{{ error }}</div>
     </div>
-  </Teleport>
+    <template #footer>
+      <Button variant="secondary" @click="uiStore.closeNewPipelineModal">Cancel</Button>
+      <Button variant="primary" :disabled="isCreating" @click="handleCreate">
+        {{ isCreating ? 'Creating...' : 'Create' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--color-overlay-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-xxl);
-  min-width: var(--size-modal-min-width);
-  box-shadow: 0 var(--spacing-xs) var(--spacing-xl) var(--color-shadow-dark);
-}
-
-.modal h2 {
-  margin-bottom: var(--spacing-lg);
-  font-size: var(--font-size-lg);
-  font-weight: 500;
+.new-pipeline-body {
+  padding: var(--spacing-xl);
 }
 
 .selected-template {
@@ -197,7 +146,7 @@ function handleOverlayMouseup(e: MouseEvent) {
   margin-bottom: var(--spacing-md);
 }
 
-.modal input {
+.name-input {
   width: 100%;
   padding: 10px var(--spacing-md);
   background: var(--color-bg-primary);
@@ -209,17 +158,10 @@ function handleOverlayMouseup(e: MouseEvent) {
   margin-bottom: var(--spacing-lg);
 }
 
-.modal input:focus {
+.name-input:focus {
   outline: none;
   border-color: var(--color-accent);
 }
-
-.modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-
 
 .error {
   color: var(--color-error);

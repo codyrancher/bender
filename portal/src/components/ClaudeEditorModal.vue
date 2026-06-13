@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import Modal from './primitives/Modal.vue'
+import Button from './primitives/Button.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>()
@@ -23,7 +25,7 @@ watch(() => props.open, async (open) => {
 })
 
 function close() {
-  emit('update:open', false)
+  if (!mdSaving.value) emit('update:open', false)
 }
 
 async function saveMd() {
@@ -36,7 +38,7 @@ async function saveMd() {
       body: JSON.stringify({ content: mdContent.value }),
     })
     if (!resp.ok) throw new Error(await resp.text())
-    close()
+    emit('update:open', false)
   } catch (err) {
     mdError.value = `Save failed: ${err instanceof Error ? err.message : String(err)}`
   } finally {
@@ -62,66 +64,39 @@ async function resetMd() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="md-overlay" @mousedown.self="!mdSaving && close()">
-      <div class="md-modal">
-        <div class="md-modal-header">
-          <h2>CLAUDE.md</h2>
-          <span class="md-hint">Global instructions for the CLI. Saved to <code>/data/cli/workspace/CLAUDE.md</code>. Restart the session to reload.</span>
-        </div>
-        <textarea
-          v-model="mdContent"
-          class="md-textarea"
-          spellcheck="false"
-          :disabled="mdSaving"
-        ></textarea>
-        <div v-if="mdError" class="md-error">{{ mdError }}</div>
-        <div class="md-modal-buttons">
-          <button class="md-reset" :disabled="mdSaving" @click="resetMd">Reset to default</button>
-          <div class="md-spacer"></div>
-          <button class="md-cancel" :disabled="mdSaving" @click="close">Cancel</button>
-          <button class="md-save" :disabled="mdSaving" @click="saveMd">
-            {{ mdSaving ? 'Saving...' : 'Save' }}
-          </button>
-        </div>
-      </div>
+  <Modal v-if="open" title="CLAUDE.md" @close="close">
+    <div class="md-body">
+      <p class="md-hint">Global instructions for the CLI. Saved to <code>/data/cli/workspace/CLAUDE.md</code>. Restart the session to reload.</p>
+      <textarea
+        v-model="mdContent"
+        class="md-textarea"
+        spellcheck="false"
+        :disabled="mdSaving"
+      ></textarea>
+      <div v-if="mdError" class="md-error">{{ mdError }}</div>
     </div>
-  </Teleport>
+    <template #footer>
+      <button class="md-reset" :disabled="mdSaving" @click="resetMd">Reset to default</button>
+      <Button variant="secondary" :disabled="mdSaving" @click="close">Cancel</Button>
+      <Button variant="primary" :disabled="mdSaving" @click="saveMd">
+        {{ mdSaving ? 'Saving...' : 'Save' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped>
-.md-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--color-overlay-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.md-modal {
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
+.md-body {
   padding: var(--spacing-xl);
-  width: min(900px, 90vw);
-  height: min(700px, 85vh);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  box-shadow: 0 var(--spacing-xs) var(--spacing-xl) var(--color-shadow-dark);
-}
-
-.md-modal-header h2 {
-  font-size: var(--font-size-lg);
-  font-weight: 500;
-  margin-bottom: var(--spacing-xs);
 }
 
 .md-hint {
-  display: block;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
+  margin: 0;
 }
 
 .md-hint code {
@@ -132,8 +107,7 @@ async function resetMd() {
 }
 
 .md-textarea {
-  flex: 1;
-  min-height: 0;
+  min-height: 50vh;
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
   border: var(--border-width-sm) solid var(--color-border-dark);
@@ -142,7 +116,7 @@ async function resetMd() {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   line-height: 1.5;
-  resize: none;
+  resize: vertical;
   outline: none;
 }
 
@@ -155,59 +129,24 @@ async function resetMd() {
   font-size: var(--font-size-xs);
 }
 
-.md-modal-buttons {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.md-spacer {
-  flex: 1;
-}
-
-.md-reset,
-.md-cancel,
-.md-save {
+/* Subtle "reset" action, pushed to the left of the footer's right-aligned buttons. */
+.md-reset {
+  margin-right: auto;
   padding: var(--spacing-sm) var(--spacing-lg);
   border: none;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
   font-family: inherit;
   font-size: var(--font-size-sm);
   cursor: pointer;
-}
-
-.md-reset {
-  background: transparent;
-  color: var(--color-text-muted);
 }
 
 .md-reset:hover:not(:disabled) {
   color: var(--color-warning, #e05050);
 }
 
-.md-cancel {
-  background: var(--color-bg-element);
-  color: var(--color-text-muted);
-}
-
-.md-cancel:hover:not(:disabled) {
-  background: var(--color-bg-element-hover);
-  color: var(--color-text-hover);
-}
-
-.md-save {
-  background: var(--color-accent);
-  color: var(--color-bg-primary);
-  font-weight: 500;
-}
-
-.md-save:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
-.md-reset:disabled,
-.md-cancel:disabled,
-.md-save:disabled {
+.md-reset:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

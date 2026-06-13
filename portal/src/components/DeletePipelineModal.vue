@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { usePipelineId } from '@/composables/route'
+import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 
 const router = useRouter()
@@ -34,6 +35,11 @@ function appendLog(message: string) {
   })
 }
 
+// Closing is blocked while a delete is streaming.
+function close() {
+  if (!isDeleting.value) uiStore.closeDeletePipelineModal()
+}
+
 async function handleDelete() {
   const name = uiStore.deletePipelineName
   if (!name || isDeleting.value) return
@@ -55,126 +61,58 @@ async function handleDelete() {
     isDeleting.value = false
   }
 }
-
-let mouseDownOnOverlay = false
-
-function handleOverlayMousedown(e: MouseEvent) {
-  mouseDownOnOverlay = e.target === e.currentTarget
-}
-
-function handleOverlayMouseup(e: MouseEvent) {
-  if (mouseDownOnOverlay && e.target === e.currentTarget && !isDeleting.value) {
-    uiStore.closeDeletePipelineModal()
-  }
-  mouseDownOnOverlay = false
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && !isDeleting.value) {
-    uiStore.closeDeletePipelineModal()
-  }
-}
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="uiStore.deletePipelineName"
-      class="modal-overlay"
-      @mousedown="handleOverlayMousedown"
-      @mouseup="handleOverlayMouseup"
-      @keydown="handleKeydown"
-    >
-      <div class="modal" :class="{ 'modal-wide': isDeleting && logs.length > 0 }">
-        <template v-if="!isDeleting">
-          <h2>Delete Pipeline</h2>
-          <p class="message">
-            Are you sure you want to delete
-            <strong>{{ uiStore.deletePipelineName }}</strong>?
-            This will stop the container and remove all pipeline files.
-          </p>
-          <div class="modal-buttons">
-            <Button variant="secondary" @click="uiStore.closeDeletePipelineModal">Cancel</Button>
-            <Button variant="danger" @click="handleDelete">Delete</Button>
-          </div>
-        </template>
-        <template v-else>
-          <div class="deleting">
-            <div class="deleting-header">
-              <div class="spinner"></div>
-              <p>Shutting down <strong>{{ uiStore.deletePipelineName }}</strong>...</p>
-            </div>
-            <div
-              v-if="logs.length > 0"
-              ref="logContainer"
-              class="log-output"
-            >
-              <div v-for="(line, i) in logs" :key="i" class="log-line">{{ line }}</div>
-            </div>
-            <p v-else class="sub">Starting cleanup...</p>
-          </div>
-        </template>
+  <Modal v-if="uiStore.deletePipelineName" title="Delete Pipeline" @close="close">
+    <div class="dp-body">
+      <p v-if="!isDeleting" class="message">
+        Are you sure you want to delete
+        <strong>{{ uiStore.deletePipelineName }}</strong>?
+        This will stop the container and remove all pipeline files.
+      </p>
+      <div v-else class="deleting">
+        <div class="deleting-header">
+          <div class="spinner"></div>
+          <p>Shutting down <strong>{{ uiStore.deletePipelineName }}</strong>...</p>
+        </div>
+        <div
+          v-if="logs.length > 0"
+          ref="logContainer"
+          class="log-output"
+        >
+          <div v-for="(line, i) in logs" :key="i" class="log-line">{{ line }}</div>
+        </div>
+        <p v-else class="sub">Starting cleanup...</p>
       </div>
     </div>
-  </Teleport>
+    <template v-if="!isDeleting" #footer>
+      <Button variant="secondary" @click="close">Cancel</Button>
+      <Button variant="danger" @click="handleDelete">Delete</Button>
+    </template>
+  </Modal>
 </template>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--color-overlay-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-xxl);
-  min-width: var(--size-modal-min-width);
-  max-width: 400px;
-  box-shadow: 0 var(--spacing-xs) var(--spacing-xl) var(--color-shadow-dark);
-}
-
-.modal.modal-wide {
-  max-width: 520px;
-  width: 520px;
-}
-
-.modal h2 {
-  margin-bottom: var(--spacing-md);
-  font-size: var(--font-size-lg);
-  font-weight: 500;
+.dp-body {
+  padding: var(--spacing-xl);
 }
 
 .message {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   line-height: 1.5;
-  margin-bottom: var(--spacing-lg);
+  margin: 0;
 }
 
 .message strong {
   color: var(--color-text-primary);
 }
 
-.modal-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-
 .deleting {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) 0;
 }
 
 .deleting-header {
