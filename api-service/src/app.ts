@@ -7,6 +7,7 @@ import { registerInsightsRoutes } from './routes/insights';
 import { registerDefinitionRoutes } from './routes/definitions';
 import { registerSkillDefinitionRoutes } from './routes/skill-definitions';
 import { registerCliRoutes } from './routes/pty';
+import { registerHarnessRoutes } from './routes/harness';
 
 export const app = express();
 app.use(cors());
@@ -17,3 +18,4 @@ registerInsightsRoutes(app);
 registerDefinitionRoutes(app);
 registerSkillDefinitionRoutes(app);
 registerCliRoutes(app);
+registerHarnessRoutes(app);
