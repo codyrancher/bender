@@ -2,14 +2,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
-import DiffViewer from '../components/primitives/DiffViewer.vue'
+import { parsePipeline } from '@/utils/pipelineDefinition'
 import PipelineGraph from '../components/PipelineGraph.vue'
 import Tabs from '../components/primitives/Tabs.vue'
-import Modal from '../components/primitives/Modal.vue'
-import Button from '../components/primitives/Button.vue'
-import FormField from '../components/primitives/FormField.vue'
 import StatePanel from '../components/primitives/StatePanel.vue'
 import SkillDefinitionsPanel from '../components/SkillDefinitionsPanel.vue'
+import PipelineDefinitionsList from '../components/PipelineDefinitionsList.vue'
+import PipelineImportModal from '../components/PipelineImportModal.vue'
+import PipelineHistorySection from '../components/PipelineHistorySection.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,68 +17,15 @@ const router = useRouter()
 // The active tab lives in the URL (/definitions/:tab) so a refresh stays put.
 const activeTab = ref<string>((route.params.tab as string) || 'pipelines')
 
-interface DefSummary { id: string; name: string; stages: any[]; skills: string[] }
 interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }>; claudeMd: string }
 
-const definitions = ref<DefSummary[]>([])
+const definitions = ref<Array<{ id: string; name: string; stages: any[]; skills: string[] }>>([])
 const selectedId = ref<string | null>(null)
 const detail = ref<DefDetail | null>(null)
 const history = ref<Array<{ sha: string; author: string; date: string; message: string }>>([])
 const loading = ref(false)
-
-// commit history reused by DiffViewer (it fetches each commit's diff url)
-const diffOpen = ref(false)
-const diffCommits = computed(() =>
-  history.value.map(c => ({
-    name: c.sha.slice(0, 7),
-    message: c.message,
-    url: selectedId.value ? api.definitionCommitUrl(selectedId.value, c.sha) : '',
-  })),
-)
-const diffInitial = ref(0)
-
 const creating = ref(false)
-const newId = ref('')
-
-// Import a definition from a running pipeline instance — pushes that pipeline's
-// current pipeline.md + referenced skills into the definitions repo. (Relocated
-// here from the pipeline card's old "push to definitions" button.)
-const importModal = ref<{ instances: string[]; pipeline: string; definitionId: string; message: string; saving: boolean; error: string } | null>(null)
-
-async function openImport() {
-  importModal.value = { instances: [], pipeline: '', definitionId: '', message: '', saving: false, error: '' }
-  try {
-    const r = await api.getPipelines()
-    const instances = r.pipelines.map(p => p.name)
-    const first = instances[0] || ''
-    importModal.value = { instances, pipeline: first, definitionId: first, message: first ? `Update ${first} definition` : '', saving: false, error: '' }
-  } catch (e) {
-    if (importModal.value) importModal.value.error = e instanceof Error ? e.message : 'Failed to load pipelines'
-  }
-}
-
-function onPickImportPipeline() {
-  const m = importModal.value
-  if (!m) return
-  m.definitionId = m.pipeline
-  m.message = `Update ${m.pipeline} definition`
-}
-
-async function confirmImport() {
-  const m = importModal.value
-  if (!m || m.saving || !m.pipeline || !m.definitionId.trim()) return
-  m.saving = true; m.error = ''
-  try {
-    await api.pushPipelineDefinition(m.pipeline, m.definitionId.trim(), m.message.trim())
-    await load()
-    importModal.value = null
-    router.push('/definitions/pipelines/' + m.definitionId.trim())
-  } catch (err) {
-    m.error = err instanceof Error ? err.message : 'Import failed'
-  } finally {
-    if (importModal.value) importModal.value.saving = false
-  }
-}
+const showImport = ref(false)
 
 // pipeline.md editor working copy + global skill availability
 const editMd = ref('')
@@ -149,18 +96,10 @@ watch(() => [activeTab.value, route.params.id] as const, ([tab, id]) => {
   if (tab === 'pipelines' && rid && rid !== selectedId.value) select(rid)
 }, { immediate: true })
 
-function openDiffAt(index: number) {
-  diffInitial.value = index
-  diffOpen.value = true
-}
-
-async function createDefinition() {
-  const id = newId.value.trim()
-  if (!id) return
+async function createDefinition(id: string) {
   creating.value = true
   try {
     await api.createDefinition(id)
-    newId.value = ''
     await load()
     await select(id)
   } catch {
@@ -177,54 +116,13 @@ async function removeDefinition(id: string) {
   } catch {}
 }
 
-function shortDate(iso: string): string {
-  try { return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
-  catch { return iso }
+async function onImported(id: string) {
+  await load()
+  router.push('/definitions/pipelines/' + id)
 }
 
 // ── pipeline.md parsing + validation ──────────────────────────
 const STAGE_HEADER = /^###\s+\d+\.\s+/
-
-interface ParsedStage { name: string; skill: string; successCriteria: string; nextNames: string[]; next: number[] }
-
-// Client-side mirror of the backend pipeline.md parser (parsePipelineStages +
-// resolveGraph): captures stages, skills, success criteria and Next edges, then
-// resolves successor names to indices (linear default when no edges declared).
-function parsePipeline(md: string): { stages: ParsedStage[]; unresolved: Array<{ stage: string; target: string }> } {
-  const lines = (md || '').split('\n')
-  const stages: ParsedStage[] = []
-  let cur: ParsedStage | null = null
-  let desc: string[] = []
-  const flush = () => { if (cur) { stages.push(cur) } }
-  for (const line of lines) {
-    const m = line.match(/^###\s+\d+\.\s+(.+)/)
-    if (m) { flush(); cur = { name: m[1].trim(), skill: '', successCriteria: '', nextNames: [], next: [] }; desc = []; continue }
-    if (cur) {
-      let mm: RegExpMatchArray | null
-      if ((mm = line.match(/^\*\*Skill:\*\*\s*(.+)/))) { cur.skill = mm[1].trim(); continue }
-      if ((mm = line.match(/^\*\*Success Criteria:\*\*\s*(.+)/))) { cur.successCriteria = mm[1].trim(); continue }
-      if ((mm = line.match(/^\*\*Next:\*\*\s*(.+)/))) { cur.nextNames = mm[1].split(',').map(s => s.trim()).filter(Boolean); continue }
-      const t = line.trim(); if (t) desc.push(t)
-    }
-  }
-  flush()
-  const byName = new Map<string, number>()
-  stages.forEach((s, i) => byName.set(s.name.toLowerCase(), i))
-  const anyEdges = stages.some(s => s.nextNames.length)
-  const unresolved: Array<{ stage: string; target: string }> = []
-  stages.forEach((s, i) => {
-    if (anyEdges) {
-      s.next = s.nextNames.map(n => {
-        const j = byName.has(n.toLowerCase()) ? byName.get(n.toLowerCase())! : -1
-        if (j < 0) unresolved.push({ stage: s.name, target: n })
-        return j
-      }).filter(x => x >= 0)
-    } else {
-      s.next = i < stages.length - 1 ? [i + 1] : []
-    }
-  })
-  return { stages, unresolved }
-}
 
 // Names of skills that can satisfy a stage reference: bundled in this definition
 // OR available as a global skill-definition.
@@ -357,25 +255,14 @@ function jumpToStage(index: number) {
     <SkillDefinitionsPanel v-if="activeTab === 'skills'" />
 
     <div v-show="activeTab === 'pipelines'" class="defs">
-      <!-- left: definition list + create -->
-      <div class="defs-list">
-        <div class="defs-list-header">{{ definitions.length }} definitions</div>
-        <button
-          v-for="d in definitions"
-          :key="d.id"
-          class="defs-item"
-          :class="{ active: selectedId === d.id }"
-          @click="router.push('/definitions/pipelines/' + d.id)"
-        >
-          <span class="defs-item-name">{{ d.name }}</span>
-          <span class="defs-item-meta">{{ d.stages.length }} stages · {{ d.skills.length }} skills</span>
-        </button>
-        <div class="defs-create">
-          <input v-model="newId" placeholder="new-definition-id" @keydown.enter="createDefinition" />
-          <button class="defs-create-btn" :disabled="creating || !newId.trim()" @click="createDefinition">+ Create</button>
-          <button class="defs-create-btn alt" title="Import a running pipeline's pipeline.md + skills as a definition" @click="openImport">↑ From pipeline</button>
-        </div>
-      </div>
+      <PipelineDefinitionsList
+        :definitions="definitions"
+        :selected-id="selectedId"
+        :creating="creating"
+        @select="router.push('/definitions/pipelines/' + $event)"
+        @create="createDefinition"
+        @import="showImport = true"
+      />
 
       <!-- right: detail -->
       <div class="defs-detail">
@@ -492,71 +379,14 @@ function jumpToStage(index: number) {
             </div>
           </div>
 
-          <div class="defs-section">
-            <div class="defs-section-title">History</div>
-            <div class="defs-history">
-              <button
-                v-for="(c, i) in history"
-                :key="c.sha"
-                class="defs-commit"
-                @click="openDiffAt(i)"
-              >
-                <span class="defs-commit-sha">{{ c.sha.slice(0, 7) }}</span>
-                <span class="defs-commit-msg">{{ c.message }}</span>
-                <span class="defs-commit-date">{{ shortDate(c.date) }}</span>
-              </button>
-              <div v-if="!history.length" class="defs-empty">No commits</div>
-            </div>
-          </div>
+          <PipelineHistorySection :history="history" :definition-id="detail.id" />
         </template>
         <StatePanel v-else>Select a definition</StatePanel>
       </div>
     </div>
   </div>
 
-  <DiffViewer
-    v-if="diffOpen && diffCommits.length"
-    :commits="diffCommits"
-    :initial-index="diffInitial"
-    @close="diffOpen = false"
-  />
-
-  <!-- Import a definition from a running pipeline instance -->
-  <Modal
-    v-if="importModal"
-    title="Import from pipeline"
-    subtitle="Push a pipeline's current pipeline.md + skills into a definition"
-    @close="!importModal.saving && (importModal = null)"
-  >
-    <div class="imp-pad">
-      <p v-if="!importModal.instances.length && !importModal.error" class="imp-empty">No pipelines available to import from.</p>
-      <template v-else>
-        <FormField label="Pipeline">
-          <select v-model="importModal.pipeline" @change="onPickImportPipeline">
-            <option v-for="i in importModal.instances" :key="i" :value="i">{{ i }}</option>
-          </select>
-        </FormField>
-        <FormField label="Definition id">
-          <input v-model="importModal.definitionId" type="text" placeholder="my-definition" spellcheck="false" />
-        </FormField>
-        <FormField label="Commit message">
-          <input v-model="importModal.message" type="text" @keydown.enter="confirmImport" />
-        </FormField>
-      </template>
-      <div v-if="importModal.error" class="imp-error">{{ importModal.error }}</div>
-    </div>
-    <template #footer>
-      <Button variant="secondary" :disabled="importModal.saving" @click="importModal = null">Cancel</Button>
-      <Button
-        v-if="importModal.instances.length"
-        variant="primary"
-        :disabled="importModal.saving || !importModal.definitionId.trim()"
-        @click="confirmImport"
-      >
-        {{ importModal.saving ? 'Importing…' : 'Import' }}
-      </Button>
-    </template>
-  </Modal>
+  <PipelineImportModal v-model:open="showImport" @imported="onImported" />
 </template>
 
 <style scoped>
@@ -577,34 +407,11 @@ function jumpToStage(index: number) {
   flex-shrink: 0;
 }
 
-.ph-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
 .page-header h1 {
   font-size: 18px;
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0;
-}
-
-.back-btn {
-  padding: 6px 12px;
-  border: 1px solid var(--color-border-medium);
-  background: transparent;
-  color: var(--color-text-muted);
-  border-radius: 6px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-
-.back-btn:hover {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
 }
 
 .defs {
@@ -613,114 +420,10 @@ function jumpToStage(index: number) {
   min-height: 0;
 }
 
-.defs-list {
-  width: 280px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--color-border-dark);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-primary);
-}
-
-.defs-list-header {
-  padding: 10px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-bottom: 1px solid var(--color-border-dark);
-}
-
-.defs-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 10px 14px;
-  border: none;
-  border-left: 2px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s;
-}
-
-.defs-item:hover { background: var(--color-bg-tertiary); }
-.defs-item.active { background: var(--color-bg-element); border-left-color: var(--color-accent); }
-
-.defs-item-name { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
-.defs-item-meta { font-size: 10px; color: var(--color-text-muted); }
-
-.defs-create {
-  margin-top: auto;
-  padding: 12px;
-  border-top: 1px solid var(--color-border-dark);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.defs-create input {
-  padding: 7px 10px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  outline: none;
-}
-
-.defs-create input:focus { border-color: var(--color-accent); }
-
-.defs-create-btn {
-  padding: 7px;
-  border: 1px solid var(--color-accent);
-  background: transparent;
-  color: var(--color-accent);
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.defs-create-btn:hover:not(:disabled) { background: var(--color-accent); color: var(--color-text-bright); }
-.defs-create-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.defs-create-btn.alt { border-color: var(--color-border-medium); color: var(--color-text-muted); }
-.defs-create-btn.alt:hover:not(:disabled) { background: var(--color-bg-element); color: var(--color-text-hover); border-color: var(--color-text-muted); }
-
-/* import-from-pipeline modal content */
-.imp-pad { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
-.imp-empty { font-size: 13px; color: var(--color-text-muted); margin: 0; }
-.imp-pad input, .imp-pad select {
-  padding: 8px 11px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-}
-.imp-pad input:focus, .imp-pad select:focus { border-color: var(--color-accent); }
-.imp-error { padding: 8px 12px; color: var(--color-error); font-size: 12px; background: rgba(232, 88, 88, 0.08); border-radius: 6px; }
-
 .defs-detail {
   flex: 1;
   overflow-y: auto;
   padding: 20px 24px;
-}
-
-.defs-state {
-  color: var(--color-text-muted);
-  font-size: 13px;
-  padding: 40px 0;
-  text-align: center;
 }
 
 .defs-detail-head {
@@ -806,46 +509,9 @@ function jumpToStage(index: number) {
   color: var(--color-text-hover);
 }
 
-.defs-history { display: flex; flex-direction: column; gap: 4px; }
-
-.defs-commit {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  transition: border-color 0.15s;
-}
-
-.defs-commit:hover { border-color: var(--color-accent); }
-
-.defs-commit-sha {
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12px;
-  color: var(--color-accent);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.defs-commit-msg {
-  font-size: 12px;
-  color: var(--color-text-primary);
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.defs-commit-date { font-size: 11px; color: var(--color-text-muted); flex-shrink: 0; }
-
 .defs-empty { font-size: 12px; color: var(--color-text-muted); }
 
-/* ── pipeline.md editor ── */
+/* ── pipeline.md / CLAUDE.md editor ── */
 .pdef-textarea {
   width: 100%;
   min-height: 280px;
@@ -931,123 +597,4 @@ function jumpToStage(index: number) {
 }
 .pdef-save:hover:not(:disabled) { background: var(--color-accent-hover); }
 .pdef-save:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* ── Stage editor modal ── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--color-overlay-dark);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1100;
-}
-
-.stage-editor {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 10px;
-  width: 50vw;
-  min-width: 520px;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 80px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 8px 32px var(--color-shadow-dark);
-}
-
-.se-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border-dark);
-  flex-shrink: 0;
-}
-
-.se-title { display: flex; flex-direction: column; gap: 2px; }
-.se-header h3 { font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin: 0; }
-.se-sub { font-size: 11px; color: var(--color-text-muted); font-family: 'SF Mono', Menlo, Consolas, monospace; }
-
-.se-close {
-  padding: 4px 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  border-radius: 4px;
-}
-.se-close:hover { background: var(--color-bg-element); color: var(--color-text-hover); }
-
-.se-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.se-field { display: flex; flex-direction: column; gap: 6px; }
-
-.se-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.se-label-hint { font-weight: 400; color: var(--color-text-muted); font-size: 11px; }
-
-.se-skill-name {
-  padding: 3px 8px;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 5px;
-  color: var(--color-accent);
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 11px;
-  outline: none;
-}
-.se-skill-name:focus { border-color: var(--color-accent); }
-
-.se-textarea {
-  width: 100%;
-  resize: vertical;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
-  color: var(--color-text-primary);
-  font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 10px 12px;
-  outline: none;
-  tab-size: 2;
-}
-.se-textarea:focus { border-color: var(--color-accent); }
-.se-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
-.se-textarea.stage { min-height: 150px; }
-.se-textarea.skill { min-height: 220px; }
-
-.se-error {
-  padding: 8px 20px;
-  color: var(--color-error);
-  font-size: 12px;
-  background: rgba(232, 88, 88, 0.08);
-}
-
-.se-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--color-border-dark);
-  flex-shrink: 0;
-}
-
 </style>
