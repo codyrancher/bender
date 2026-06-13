@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import Button from './primitives/Button.vue'
+import SearchCombobox from './primitives/SearchCombobox.vue'
 
 // All pipelines use the single Rancher template.
 const TEMPLATE_ID = 'rancher-dashboard'
@@ -29,26 +30,10 @@ const uiStore = useUiStore()
 
 const pipelineName = ref('')
 const rancherTag = ref('head')
-const rancherTagSearch = ref('')
-const showTagDropdown = ref(false)
 const nodeVersion = ref('24.0.0')
-const nodeVersionSearch = ref('')
-const showNodeDropdown = ref(false)
 const error = ref('')
 const isCreating = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
-
-const filteredTags = computed(() => {
-  const search = rancherTagSearch.value.toLowerCase()
-  if (!search) return RANCHER_TAGS
-  return RANCHER_TAGS.filter(t => t.toLowerCase().includes(search))
-})
-
-const filteredNodeVersions = computed(() => {
-  const search = nodeVersionSearch.value.toLowerCase()
-  if (!search) return NODE_VERSIONS
-  return NODE_VERSIONS.filter(v => v.toLowerCase().includes(search))
-})
 
 watch(
   () => uiStore.showNewPipelineModal,
@@ -57,11 +42,7 @@ watch(
       pipelineName.value = ''
       error.value = ''
       rancherTag.value = 'head'
-      rancherTagSearch.value = ''
-      showTagDropdown.value = false
       nodeVersion.value = '24.0.0'
-      nodeVersionSearch.value = ''
-      showNodeDropdown.value = false
       nextTick(() => {
         nameInput.value?.focus()
         nameInput.value?.select()
@@ -69,48 +50,6 @@ watch(
     }
   }
 )
-
-function selectTag(tag: string) {
-  rancherTag.value = tag
-  rancherTagSearch.value = ''
-  showTagDropdown.value = false
-}
-
-function handleTagInput(e: Event) {
-  const value = (e.target as HTMLInputElement).value
-  rancherTagSearch.value = value
-  rancherTag.value = value
-  showTagDropdown.value = true
-}
-
-function handleTagFocus() {
-  showTagDropdown.value = true
-}
-
-function handleTagBlur() {
-  setTimeout(() => { showTagDropdown.value = false }, 150)
-}
-
-function selectNodeVersion(ver: string) {
-  nodeVersion.value = ver
-  nodeVersionSearch.value = ''
-  showNodeDropdown.value = false
-}
-
-function handleNodeInput(e: Event) {
-  const value = (e.target as HTMLInputElement).value
-  nodeVersionSearch.value = value
-  nodeVersion.value = value
-  showNodeDropdown.value = true
-}
-
-function handleNodeFocus() {
-  showNodeDropdown.value = true
-}
-
-function handleNodeBlur() {
-  setTimeout(() => { showNodeDropdown.value = false }, 150)
-}
 
 function validate(): boolean {
   const name = pipelineName.value.trim()
@@ -192,55 +131,21 @@ function handleOverlayMouseup(e: MouseEvent) {
         />
         <div class="field-group">
           <label class="field-label">Rancher Image Tag</label>
-          <div class="combobox">
-            <input
-              type="text"
-              :value="rancherTag"
-              placeholder="e.g. v2.13-head"
-              autocomplete="off"
-              @input="handleTagInput"
-              @focus="handleTagFocus"
-              @blur="handleTagBlur"
-              @keydown.enter.prevent="handleCreate"
-            />
-            <div v-if="showTagDropdown && filteredTags.length" class="combobox-dropdown">
-              <button
-                v-for="tag in filteredTags"
-                :key="tag"
-                class="combobox-option"
-                :class="{ selected: tag === rancherTag }"
-                @mousedown.prevent="selectTag(tag)"
-              >
-                {{ tag }}
-              </button>
-            </div>
-          </div>
+          <SearchCombobox
+            v-model="rancherTag"
+            :options="RANCHER_TAGS"
+            placeholder="e.g. v2.13-head"
+            @submit="handleCreate"
+          />
         </div>
         <div class="field-group">
           <label class="field-label">Node Version</label>
-          <div class="combobox">
-            <input
-              type="text"
-              :value="nodeVersion"
-              placeholder="e.g. 24.0.0"
-              autocomplete="off"
-              @input="handleNodeInput"
-              @focus="handleNodeFocus"
-              @blur="handleNodeBlur"
-              @keydown.enter.prevent="handleCreate"
-            />
-            <div v-if="showNodeDropdown && filteredNodeVersions.length" class="combobox-dropdown">
-              <button
-                v-for="ver in filteredNodeVersions"
-                :key="ver"
-                class="combobox-option"
-                :class="{ selected: ver === nodeVersion }"
-                @mousedown.prevent="selectNodeVersion(ver)"
-              >
-                {{ ver }}
-              </button>
-            </div>
-          </div>
+          <SearchCombobox
+            v-model="nodeVersion"
+            :options="NODE_VERSIONS"
+            placeholder="e.g. 24.0.0"
+            @submit="handleCreate"
+          />
         </div>
         <div v-if="error" class="error">{{ error }}</div>
         <div class="modal-buttons">
@@ -332,48 +237,5 @@ function handleOverlayMouseup(e: MouseEvent) {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   margin-bottom: var(--spacing-xs);
-}
-
-.combobox {
-  position: relative;
-}
-
-.combobox input {
-  margin-bottom: 0;
-}
-
-.combobox-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--color-bg-primary);
-  border: var(--border-width-sm) solid var(--color-border-medium);
-  border-top: none;
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  z-index: 10;
-  max-height: 160px;
-  overflow-y: auto;
-}
-
-.combobox-option {
-  display: block;
-  width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: none;
-  background: transparent;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.combobox-option:hover {
-  background: var(--color-bg-element);
-}
-
-.combobox-option.selected {
-  color: var(--color-accent);
 }
 </style>

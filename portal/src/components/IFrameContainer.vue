@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
@@ -7,6 +7,7 @@ import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 import Spinner from './primitives/Spinner.vue'
 import PlayIcon from '@/assets/icons/play.svg?component'
+import HarnessIframeView from './HarnessIframeView.vue'
 
 const router = useRouter()
 const pipelinesStore = usePipelinesStore()
@@ -15,22 +16,6 @@ const uiStore = useUiStore()
 const pipelineId = usePipelineId()
 const viewMode = useViewMode()
 const isHarness = useIsHarness()
-const harnessDevRunning = computed(() => pipelinesStore.harnessStatus.devRunning)
-const harnessOperationActive = computed(() => pipelinesStore.harnessOperationActive)
-const harnessLogs = computed(() => pipelinesStore.harnessLogs)
-const harnessVscodeUrl = getVscodeUrl('bender-dev')
-const harnessVscodeReady = ref(false)
-const harnessVscodeLoaded = ref(false)
-const logsContainer = ref<HTMLElement | null>(null)
-
-// Auto-scroll logs to bottom
-watch(harnessLogs, () => {
-  nextTick(() => {
-    if (logsContainer.value) {
-      logsContainer.value.scrollTop = logsContainer.value.scrollHeight
-    }
-  })
-}, { deep: true })
 
 const noPipelines = computed(() => pipelinesStore.pipelines.length === 0)
 const isRunning = computed(() => pipelineId.value ? pipelinesStore.isPipelineRunning(pipelineId.value) : false)
@@ -134,33 +119,6 @@ async function handleStart() {
   await pipelinesStore.startPipeline(pipelineId.value)
 }
 
-async function handleHarnessStart() {
-  await pipelinesStore.harnessAction('start')
-}
-
-// Poll harness VS Code URL when dev is running
-watch(
-  () => pipelinesStore.harnessStatus.devRunning,
-  (running) => {
-    if (running && !harnessVscodeReady.value) {
-      pollHarnessVscode()
-    } else if (!running) {
-      harnessVscodeReady.value = false
-      harnessVscodeLoaded.value = false
-    }
-  },
-  { immediate: true },
-)
-
-async function pollHarnessVscode() {
-  if (harnessVscodeReady.value) return
-  if (await pollUrl(harnessVscodeUrl)) {
-    harnessVscodeReady.value = true
-  } else {
-    setTimeout(pollHarnessVscode, 2000)
-  }
-}
-
 function getVscodeSrc(pipelineName: string) {
   return getVscodeUrl(pipelineName)
 }
@@ -223,14 +181,8 @@ window.addEventListener('message', handleVscodeOpenUrl)
 
 <template>
   <div class="iframe-container" :class="{ 'split-view': isSplit }">
-    <!-- Persistent harness iframe - stays mounted while dev is running -->
-    <iframe
-      v-if="harnessVscodeReady"
-      :src="harnessVscodeUrl"
-      :class="{ active: isHarness && harnessDevRunning && !harnessOperationActive }"
-      allow="clipboard-read; clipboard-write; cross-origin-isolated"
-      @load="harnessVscodeLoaded = true"
-    ></iframe>
+    <!-- Harness dev VS Code + its overlays (always mounted; shows on harness route) -->
+    <HarnessIframeView />
 
     <!-- Persistent pipeline iframes - stay mounted for all loaded+running pipelines -->
     <template v-for="pl in pipelinesStore.pipelines" :key="pl.name">
@@ -250,36 +202,8 @@ window.addEventListener('message', handleVscodeOpenUrl)
       ></iframe>
     </template>
 
-    <!-- Overlays - rendered on top based on current view state -->
-    <template v-if="isHarness">
-      <div v-if="harnessOperationActive" class="loading-overlay">
-        <div class="harness-logs-container">
-          <div class="status-container">
-            <Spinner />
-          </div>
-          <div class="harness-logs" ref="logsContainer">
-            <div v-for="(log, i) in harnessLogs" :key="i" class="harness-log-line">{{ log }}</div>
-          </div>
-        </div>
-      </div>
-      <div v-else-if="!harnessDevRunning" class="loading-overlay">
-        <div class="not-running-container">
-          <span class="not-running-message">Dev environment is not running</span>
-          <button class="start-btn" @click="handleHarnessStart">
-            <PlayIcon />
-            Start Dev Environment
-          </button>
-        </div>
-      </div>
-      <div v-else-if="!harnessVscodeLoaded" class="loading-overlay">
-        <div class="status-container">
-          <Spinner />
-          <span>Loading VSCode...</span>
-        </div>
-      </div>
-    </template>
-
-    <template v-else>
+    <!-- Overlays for the active pipeline (the harness has its own, above) -->
+    <template v-if="!isHarness">
       <div v-if="uiStore.isLoading" class="loading-overlay">
         {{ uiStore.loadingMessage }}
       </div>
@@ -424,32 +348,5 @@ window.addEventListener('message', handleVscodeOpenUrl)
 .start-btn svg {
   width: 20px;
   height: 20px;
-}
-
-.harness-logs-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-lg);
-  max-width: 600px;
-  width: 100%;
-}
-
-.harness-logs {
-  width: 100%;
-  max-height: 300px;
-  overflow-y: auto;
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-md);
-  font-family: monospace;
-  font-size: var(--font-size-xs);
-  line-height: 1.6;
-}
-
-.harness-log-line {
-  color: var(--color-text-muted);
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 </style>

@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { RouterLink } from 'vue-router'
+import { computed } from 'vue'
+import { useRouter, RouterLink } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
-import { useUiStore } from '@/stores/ui'
 import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
+import HarnessToolbar from './HarnessToolbar.vue'
+import PortForwardControl from './PortForwardControl.vue'
 import ExternalLinkIcon from '@/assets/icons/external-link.svg?component'
-import GlobeIcon from '@/assets/icons/globe.svg?component'
-import CloseIcon from '@/assets/icons/close.svg?component'
 import SplitIcon from '@/assets/icons/split.svg?component'
 import RefreshIcon from '@/assets/icons/refresh.svg?component'
 import StopIcon from '@/assets/icons/stop.svg?component'
@@ -17,32 +15,17 @@ import SpinnerIcon from '@/assets/icons/spinner.svg?component'
 
 const router = useRouter()
 const pipelinesStore = usePipelinesStore()
-const uiStore = useUiStore()
 
 const isHarness = useIsHarness()
 const pipelineId = usePipelineId()
 const viewMode = useViewMode()
 const isSplit = computed(() => viewMode.value === 'split')
 const isRunning = computed(() => pipelineId.value ? pipelinesStore.isPipelineRunning(pipelineId.value) : false)
-const pipelineForwards = computed(() =>
-  pipelinesStore.portForwards.filter(f => f.pipeline === pipelineId.value)
-)
-const hasForwards = computed(() => pipelineForwards.value.length > 0)
-const showForwardForm = ref(false)
-const fwdPublicPort = ref('')
-const fwdLocalPort = ref('')
-const availablePorts = ref<number[]>([])
-const listeningPorts = ref<number[]>([])
-const loadingOptions = ref(false)
 const isStarting = computed(() => pipelineId.value ? pipelinesStore.isPipelineStarting(pipelineId.value) : false)
 const isStopping = computed(() => pipelineId.value ? pipelinesStore.isPipelineStopping(pipelineId.value) : false)
 const isBusy = computed(() => isStarting.value || isStopping.value)
 const browserPort = computed(() => pipelineId.value ? pipelinesStore.getPipelineBrowserPort(pipelineId.value) : undefined)
 const browserHost = computed(() => pipelineId.value ? pipelinesStore.getPipelineBrowserHost(pipelineId.value) : undefined)
-
-// Harness state
-const harnessDevRunning = computed(() => pipelinesStore.harnessStatus.devRunning)
-const harnessOperationActive = computed(() => pipelinesStore.harnessOperationActive)
 
 async function handleReprovision() {
   if (!pipelineId.value) return
@@ -68,35 +51,6 @@ function openBrowserNewTab() {
   window.open(getBrowserUrl(pipelineId.value, browserPort.value, browserHost.value), '_blank')
 }
 
-import { api } from '@/services/api'
-
-async function toggleForwardForm() {
-  showForwardForm.value = !showForwardForm.value
-  if (showForwardForm.value && pipelineId.value) {
-    fwdPublicPort.value = ''
-    fwdLocalPort.value = ''
-    loadingOptions.value = true
-    try {
-      const opts = await api.getForwardOptions(pipelineId.value)
-      availablePorts.value = opts.availablePorts
-      listeningPorts.value = opts.listeningPorts
-    } catch { /* ignore */ }
-    loadingOptions.value = false
-  }
-}
-
-async function submitForward() {
-  if (!pipelineId.value) return
-  const pub = parseInt(fwdPublicPort.value, 10)
-  const local = parseInt(fwdLocalPort.value, 10)
-  if (isNaN(pub) || isNaN(local) || pub < 1 || local < 1) {
-    uiStore.showToast('Enter valid port numbers', 'error')
-    return
-  }
-  await pipelinesStore.startPortForward(pipelineId.value, pub, local)
-  showForwardForm.value = false
-}
-
 function toggleSplit() {
   if (!pipelineId.value) return
   if (isSplit.value) {
@@ -105,64 +59,12 @@ function toggleSplit() {
     router.push(`/${pipelineId.value}/split`)
   }
 }
-
-// Harness actions
-async function handleHarnessStart() {
-  await pipelinesStore.harnessAction('start')
-}
-
-async function handleHarnessRebuild() {
-  await pipelinesStore.harnessAction('rebuild')
-}
-
-async function handleHarnessPromote() {
-  if (!confirm('Promote dev changes to production? This will rebuild the production API and portal, then remove the dev environment.')) return
-  await pipelinesStore.harnessAction('promote')
-}
-
-async function handleHarnessAbandon() {
-  if (!confirm('Abandon dev environment? All uncommitted changes will be lost.')) return
-  await pipelinesStore.harnessAction('abandon')
-}
-
 </script>
 
 <template>
   <div class="toolbar">
-    <!-- Harness toolbar -->
-    <template v-if="isHarness">
-      <div class="tabs">
-        <div class="tab-wrapper active">
-          <span class="tab-label">Harness Dev</span>
-        </div>
-      </div>
-      <div class="toolbar-buttons">
-        <template v-if="!harnessDevRunning && !harnessOperationActive">
-          <button class="toolbar-btn text-btn accent" @click="handleHarnessStart">
-            Start Dev
-          </button>
-        </template>
-        <template v-else-if="harnessOperationActive">
-          <button class="toolbar-btn text-btn" disabled>
-            <SpinnerIcon class="spinner" />
-            Working...
-          </button>
-        </template>
-        <template v-else>
-          <button class="toolbar-btn text-btn" @click="handleHarnessRebuild" title="Rebuild dev API from current source">
-            Rebuild
-          </button>
-          <button class="toolbar-btn text-btn accent" @click="handleHarnessPromote" title="Promote dev changes to production">
-            Promote
-          </button>
-          <button class="toolbar-btn text-btn danger" @click="handleHarnessAbandon" title="Discard dev environment">
-            Abandon
-          </button>
-        </template>
-      </div>
-    </template>
+    <HarnessToolbar v-if="isHarness" />
 
-    <!-- Project toolbar -->
     <template v-else>
       <div class="tabs">
         <div v-if="pipelineId" class="tab-wrapper" :class="{ active: viewMode === 'vscode' || viewMode === 'split' }">
@@ -183,37 +85,7 @@ async function handleHarnessAbandon() {
         </div>
       </div>
       <div class="toolbar-buttons">
-        <div v-if="pipelineId && isRunning" class="forward-wrap">
-          <button
-            class="toolbar-btn icon-btn"
-            :class="{ active: hasForwards || showForwardForm }"
-            title="Port forwarding"
-            @click="toggleForwardForm"
-          >
-            <GlobeIcon />
-          </button>
-          <div v-if="showForwardForm" class="forward-dropdown">
-            <div v-for="fwd in pipelineForwards" :key="fwd.publicPort" class="forward-row">
-              <span class="forward-label">:{{ fwd.publicPort }} → :{{ fwd.localPort }}</span>
-              <button class="btn-icon" title="Stop" @click="pipelinesStore.stopPortForward(fwd.publicPort)">
-                <CloseIcon />
-              </button>
-            </div>
-            <div v-if="loadingOptions" class="forward-loading">Loading ports...</div>
-            <div v-else class="forward-new">
-              <select v-model="fwdPublicPort" class="fwd-select">
-                <option value="" disabled>Public port</option>
-                <option v-for="p in availablePorts" :key="p" :value="String(p)">{{ p }}</option>
-              </select>
-              <span class="fwd-arrow">→</span>
-              <select v-model="fwdLocalPort" class="fwd-select">
-                <option value="" disabled>Local port</option>
-                <option v-for="p in listeningPorts" :key="p" :value="String(p)">{{ p }}</option>
-              </select>
-              <button class="btn btn-primary btn-sm" :disabled="!fwdPublicPort || !fwdLocalPort" @click="submitForward">Add</button>
-            </div>
-          </div>
-        </div>
+        <PortForwardControl v-if="pipelineId && isRunning" :pipeline-id="pipelineId" />
         <button
           v-if="pipelineId && browserPort"
           class="toolbar-btn icon-btn"
@@ -297,13 +169,6 @@ async function handleHarnessAbandon() {
   transition: color var(--transition-fast);
 }
 
-.tab-label {
-  color: var(--color-text-primary);
-  padding: var(--spacing-sm) var(--spacing-lg);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-}
-
 .tab-wrapper:hover .tab-link {
   color: var(--color-text-hover);
 }
@@ -371,30 +236,6 @@ async function handleHarnessAbandon() {
   cursor: not-allowed;
 }
 
-.toolbar-btn.text-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding: 0 var(--spacing-lg);
-  font-weight: 500;
-}
-
-.toolbar-btn.text-btn.accent {
-  color: var(--color-accent);
-}
-
-.toolbar-btn.text-btn.accent:hover {
-  color: var(--color-accent-hover);
-}
-
-.toolbar-btn.text-btn.danger {
-  color: var(--color-warning);
-}
-
-.toolbar-btn.text-btn.danger:hover {
-  color: var(--color-warning-hover);
-}
-
 .toolbar-btn.icon-btn {
   width: 28px;
   padding: 0;
@@ -429,19 +270,10 @@ async function handleHarnessAbandon() {
   color: var(--color-accent-hover);
 }
 
-.toolbar-btn.icon-btn.forwarded-elsewhere {
-  color: var(--color-warning);
-}
-
-.toolbar-btn.icon-btn.forwarded-elsewhere:hover {
-  color: var(--color-warning-hover);
-}
-
 .toolbar-btn.icon-btn.busy {
   cursor: wait;
 }
 
-.toolbar-btn .spinner,
 .toolbar-btn.icon-btn .spinner {
   width: 14px;
   height: 14px;
@@ -455,76 +287,5 @@ async function handleHarnessAbandon() {
   to {
     transform: rotate(360deg);
   }
-}
-
-.forward-wrap {
-  position: relative;
-}
-
-.forward-dropdown {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: var(--spacing-xs);
-  background: var(--color-bg-element);
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm);
-  min-width: 260px;
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.forward-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-xxs) 0;
-}
-
-.forward-label {
-  font-size: var(--font-size-xs);
-  font-family: monospace;
-  color: var(--color-text-primary);
-}
-
-.forward-new {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  padding-top: var(--spacing-xs);
-  border-top: var(--border-width-sm) solid var(--color-border-dark);
-}
-
-.fwd-select {
-  flex: 1;
-  padding: var(--spacing-xxs) var(--spacing-xs);
-  background: var(--color-bg-primary);
-  border: var(--border-width-sm) solid var(--color-border-dark);
-  border-radius: var(--radius-xs);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-xs);
-  font-family: monospace;
-  cursor: pointer;
-}
-
-.fwd-select:focus {
-  outline: none;
-  border-color: var(--color-accent);
-}
-
-.forward-loading {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  padding: var(--spacing-xs) 0;
-  text-align: center;
-}
-
-.fwd-arrow {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
 }
 </style>
