@@ -62,7 +62,7 @@ async function removeMapping(pipeline: string, service: string) {
     <section class="section">
       <h2>External Port Range</h2>
       <p class="description">
-        Ports available to expose project services publicly.
+        Ports available to expose pipeline services publicly.
       </p>
 
       <div v-if="!isEditing" class="port-range-display">

@@ -56,7 +56,7 @@ function validate(): boolean {
   const name = pipelineName.value.trim()
 
   if (!name) {
-    error.value = 'Project name is required'
+    error.value = 'Pipeline name is required'
     return false
   }
 
@@ -82,7 +82,7 @@ async function handleCreate() {
     uiStore.closeNewPipelineModal()
     router.push(`/${name}/vscode`)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to create project'
+    error.value = err instanceof Error ? err.message : 'Failed to create pipeline'
   } finally {
     isCreating.value = false
   }
@@ -98,7 +98,7 @@ async function handleCreate() {
         v-model="pipelineName"
         class="name-input"
         type="text"
-        placeholder="Project name (e.g., my-project)"
+        placeholder="Pipeline name (e.g., my-pipeline)"
         autocomplete="off"
         @keydown.enter="handleCreate"
       />

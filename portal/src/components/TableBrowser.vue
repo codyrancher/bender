@@ -153,7 +153,7 @@ defineExpose({ refresh: loadTables })
       </div>
       <div v-if="!rows.length" class="empty-state">No data</div>
     </div>
-    <div v-else-if="!tables.length" class="empty-state">No tables yet. Data will appear as projects report insights.</div>
+    <div v-else-if="!tables.length" class="empty-state">No tables yet. Data will appear as pipelines report insights.</div>
   </div>
 </template>
 

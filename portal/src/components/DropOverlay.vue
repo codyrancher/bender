@@ -16,7 +16,7 @@ async function handleImageDrop(file: File) {
   }
 
   if (!currentPipelineId.value) {
-    uiStore.showToast('No project selected', 'error')
+    uiStore.showToast('No pipeline selected', 'error')
     return
   }
 
@@ -148,7 +148,7 @@ onUnmounted(() => {
       @click="handleOverlayClick"
     >
       <div class="drop-zone">
-        <span class="drop-overlay-text">Drop image to upload to project</span>
+        <span class="drop-overlay-text">Drop image to upload to pipeline</span>
       </div>
     </div>
   </Teleport>
