@@ -1,4 +1,20 @@
 // Shared paths, container naming, and configuration constants for the API.
+import fs from 'fs';
+import path from 'path';
+
+// Resolve a bundled asset dir (templates, seed definitions) that the Dockerfile
+// copies to the package root (e.g. /app/templates). At runtime this module sits
+// two levels deep (dist/config/), so resolve from there — with a fallback to the
+// legacy one-level layout so a flatter build still resolves. (Before the layered
+// refactor these used `__dirname/../name`, which silently pointed at the
+// nonexistent dist/<name> once the sources moved into subdirectories.)
+export function bundledDir(name: string): string {
+  const candidates = [
+    path.join(__dirname, '..', '..', name),
+    path.join(__dirname, '..', name),
+  ];
+  return candidates.find(fs.existsSync) || candidates[0];
+}
 
 export const DATA_DIR = '/data';
 export const PIPELINES_DIR = '/data/pipelines';

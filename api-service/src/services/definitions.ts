@@ -16,6 +16,7 @@ import { HttpError } from '../utils/http';
 import { listSkillDefinitions, getSkillDefinition } from './skillDefinitions';
 import { getTemplateClaudeMd } from './templates';
 import { parsePipelineSpec, validatePipeline, markdownToYaml } from '../utils/pipelineParser';
+import { bundledDir } from '../config/constants';
 
 // Template whose CLAUDE.md seeds a new definition's CLAUDE.md by default (every
 // pipeline gets this template's environment unless another is requested).
@@ -23,7 +24,7 @@ const DEFAULT_CLAUDE_TEMPLATE = 'rancher-dashboard';
 
 const DEFINITIONS_DIR = '/data/config/pipeline-definitions';
 // Baked-in defaults shipped in the image, used to seed the repo on first run.
-const SEED_DIR = path.join(__dirname, '..', 'pipeline-definitions');
+const SEED_DIR = bundledDir('pipeline-definitions');
 
 const GIT_NAME = 'Bender';
 const GIT_EMAIL = 'bender@local';
@@ -193,7 +194,28 @@ export function materializeInto(id: string, workspaceDir: string): boolean {
   const def = getDefinition(id);
   if (!def) return false;
   fs.writeFileSync(path.join(workspaceDir, 'pipeline.yaml'), def.content);
+  materializeSkills(def, workspaceDir);
+  return true;
+}
 
+// Refresh just the skills in an existing workspace from the current definition,
+// WITHOUT touching pipeline.yaml. Skills are otherwise only copied at instance
+// creation, so a long-lived pipeline would keep running stale skills; call this
+// before a (re)run so it picks up skill-definition edits made since creation.
+// Returns false if the definition no longer exists.
+export function rematerializeSkills(id: string, workspaceDir: string): boolean {
+  ensureRepo();
+  const def = getDefinition(id);
+  if (!def) return false;
+  materializeSkills(def, workspaceDir);
+  return true;
+}
+
+// Write a definition's skills into a workspace's .claude/skills/: bundled skills
+// (highest precedence), the global skill-definitions each stage references, and
+// the rancher-browser-* library skills stage skills compose. Overwrites existing
+// copies so a workspace tracks the latest skill content.
+function materializeSkills(def: any, workspaceDir: string): void {
   const written = new Set<string>();
   // Skills bundled with the definition take precedence.
   for (const s of def.skills) {
@@ -234,7 +256,6 @@ export function materializeInto(id: string, workspaceDir: string): boolean {
       written.add(lib.id.toLowerCase());
     }
   } catch { /* library materialization is best-effort */ }
-  return true;
 }
 
 // Create a new definition. New definitions default their CLAUDE.md to the
@@ -294,4 +315,27 @@ export function migrateDefinitionsToYaml(): void {
     }
   }
   if (changed) gitCommit('Migrate definitions from pipeline.md to pipeline.yaml');
+}
+
+// Backfill the companion CLAUDE.md for definitions that predate it. The seed
+// only copies `<id>.CLAUDE.md` during the one-time repo init (ensureRepo), so a
+// repo created before that file existed has a definition folder with only
+// pipeline.yaml — its CLAUDE.md never surfaces. For each existing definition
+// missing a CLAUDE.md where a baked seed companion exists, copy it in. Only acts
+// when the file is absent, so it won't clobber edits (and runs once thereafter).
+export function backfillMissingClaudeMd(): void {
+  ensureRepo();
+  let changed = false;
+  for (const entry of fs.readdirSync(DEFINITIONS_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === '.git') continue;
+    const dir = path.join(DEFINITIONS_DIR, entry.name);
+    if (!fs.existsSync(path.join(dir, 'pipeline.yaml'))) continue;
+    const claudePath = path.join(dir, 'CLAUDE.md');
+    if (fs.existsSync(claudePath)) continue;
+    const seed = path.join(SEED_DIR, `${entry.name}.CLAUDE.md`);
+    if (!fs.existsSync(seed)) continue;
+    fs.copyFileSync(seed, claudePath);
+    changed = true;
+  }
+  if (changed) gitCommit('Backfill CLAUDE.md from seeds for existing definitions');
 }

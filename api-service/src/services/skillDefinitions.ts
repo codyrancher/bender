@@ -14,10 +14,11 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { HttpError } from '../utils/http';
+import { bundledDir } from '../config/constants';
 
 const SKILL_DEFINITIONS_DIR = '/data/config/skill-definitions';
 // Baked-in defaults shipped in the image, used to seed the repo on first run.
-const SEED_DIR = path.join(__dirname, '..', 'skill-definitions');
+const SEED_DIR = bundledDir('skill-definitions');
 
 const GIT_NAME = 'Bender';
 const GIT_EMAIL = 'bender@local';

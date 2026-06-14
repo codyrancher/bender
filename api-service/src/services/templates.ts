@@ -2,8 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import Handlebars from 'handlebars';
+import { bundledDir } from '../config/constants';
 
-const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
+const TEMPLATES_DIR = bundledDir('templates');
 
 export function getTemplateIds(): string[] {
   return getAvailableTemplates();
