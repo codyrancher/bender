@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, renderString } from './services/templates';
 import { extractPipelineFlags } from './utils/pipelineFlags';
 import { broadcast } from './services/events';
-import { materializeInto as materializeDefinition, writeDefinition, getDefinition } from './services/definitions';
+import { materializeInto as materializeDefinition, rematerializeSkills, writeDefinition, getDefinition } from './services/definitions';
 
 import {
   PIPELINES_DIR, COMPOSE_PROJECT, CLAUDE_CONFIG_DIR, STAGE_TIMEOUT_MS, BENDER_IMAGE,
@@ -82,12 +82,12 @@ export function registerRoutes(app: Express): void {
       const projectName = (req.body.name || '').trim();
 
       if (!projectName) {
-        res.status(400).json({ error: 'Project name is required' });
+        res.status(400).json({ error: 'Pipeline name is required' });
         return;
       }
 
       if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectName)) {
-        res.status(400).json({ error: 'Invalid project name. Use alphanumeric, hyphens, underscores only.' });
+        res.status(400).json({ error: 'Invalid pipeline name. Use alphanumeric, hyphens, underscores only.' });
         return;
       }
 
@@ -249,7 +249,6 @@ export function registerRoutes(app: Express): void {
 
       if (shouldStartSidecars) {
         runSidecarsUpScript(projectName);
-        injectStoredCookies(projectName);
       }
 
       broadcast('pipelines-changed');
@@ -313,7 +312,6 @@ export function registerRoutes(app: Express): void {
         startPortForwardsForProject(project);
         runInitScript(project);
         runSidecarsUpScript(project);
-        injectStoredCookies(project);
         broadcast('pipelines-changed');
         res.json({ status: 'created', project });
       } else {
@@ -326,7 +324,6 @@ export function registerRoutes(app: Express): void {
         startPortForwardsForProject(project);
         runInitScript(project);
         runSidecarsUpScript(project);
-        injectStoredCookies(project);
         broadcast('pipelines-changed');
         res.json({ status: 'started', project });
       }
@@ -370,7 +367,6 @@ export function registerRoutes(app: Express): void {
       startPortForwardsForProject(project);
       runInitScript(project);
       runSidecarsUpScript(project);
-      injectStoredCookies(project);
       broadcast('pipelines-changed');
       res.json({ status: 'restarted', project });
     } catch (err) {
@@ -399,7 +395,6 @@ export function registerRoutes(app: Express): void {
       startPortForwardsForProject(project);
       runInitScript(project);
       runSidecarsUpScript(project);
-      injectStoredCookies(project);
       broadcast('pipelines-changed');
       res.json({ status: 'reprovisioned', project });
     } catch (err) {
@@ -430,7 +425,6 @@ export function registerRoutes(app: Express): void {
       startSidecars(project);
       startPortForwardsForProject(project);
       runSidecarsUpScript(project);
-      injectStoredCookies(project);
       res.json({ status: 'sidecars-started', project });
     } catch (err) {
       res.status(500).json({ error: String(err) });
@@ -607,6 +601,10 @@ export function registerRoutes(app: Express): void {
         return res.status(404).json({ error: 'Pipeline not found' });
       }
 
+      // Pull the latest skill edits into the workspace before the run snapshots
+      // them, so a long-lived instance doesn't run stale skills.
+      refreshWorkspaceSkills(pipeline);
+
       const stages = readPipelineStages(pipeline);
       if (!stages.length) {
         return res.status(400).json({ error: 'Pipeline has no stages defined' });
@@ -764,8 +762,12 @@ export function registerRoutes(app: Express): void {
       cancelActiveRunsForPipeline(pipeline);
 
       // Restore the workspace to the chosen stage's start-of-run snapshot from
-      // the source run (keeps the current/edited pipeline.md + skills).
+      // the source run, then refresh skills from the current definition — the
+      // snapshot carries the skills as they were at the original run, so without
+      // this a rerun would replay stale skills. Skills are refreshed AFTER the
+      // restore so they win; pipeline.yaml is intentionally left as-is.
       const restored = restoreWorkspace(pipeline, srcRunId, idx);
+      refreshWorkspaceSkills(pipeline);
 
       const srcByIndex = new Map<number, any>(srcRecords.map(r => [r.stage_index, r]));
 
@@ -902,6 +904,19 @@ export function registerRoutes(app: Express): void {
     return path.join(PIPELINES_DIR, project, '.claude', 'skills', skill, 'SKILL.md');
   }
 
+  // Refresh a pipeline instance's workspace skills from its source definition so a
+  // (re)run uses the latest skill edits, not the copy made when the instance was
+  // created. Best-effort: instances created without a definition (or whose
+  // definition was since deleted) just keep their existing skills.
+  function refreshWorkspaceSkills(pipeline: string): void {
+    try {
+      const defId = readBenderJson(pipeline)?.definitionId;
+      if (!defId) return;
+      const dir = path.join(PIPELINES_DIR, pipeline);
+      if (rematerializeSkills(defId, dir)) chownRecursive(dir, 1000, 1000);
+    } catch { /* keep existing skills on any failure */ }
+  }
+
 
 
   // Push a pipeline's pipeline.md + its referenced skills to the global definitions repo
@@ -946,369 +961,6 @@ export function registerRoutes(app: Express): void {
 
 
 
-  // --- Browser cookie sync (inject host browser cookies into sidecar Chromium via CDP) ---
-  // The browser sidecar shares the project container's network namespace,
-  // so CDP at localhost:9222 is only reachable from inside that namespace.
-  // We use `docker exec` into the project container to run a Node.js script
-  // that connects to CDP via localhost and sets the cookies.
-
-  interface CookieParam {
-    name: string;
-    value: string;
-    domain: string;
-    path: string;
-    secure: boolean;
-    httpOnly: boolean;
-    sameSite?: string;
-    expirationDate?: number;
-  }
-
-  // Snapshot of host github cookies, pushed by the extension SW. Used to
-  // auto-inject into newly-started browser sidecars so they come up logged in.
-  const COOKIE_SNAPSHOT_PATH = path.join(DATA_DIR, 'config', 'github-cookies.json');
-
-  function readCookieSnapshot(): CookieParam[] | null {
-    try {
-      const raw = fs.readFileSync(COOKIE_SNAPSHOT_PATH, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.cookies)) return parsed.cookies as CookieParam[];
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Map sameSite values from Chrome extension format to CDP format.
-  const SAMESITE_MAP: Record<string, string> = {
-    no_restriction: 'None',
-    lax: 'Lax',
-    strict: 'Strict',
-    unspecified: 'None',
-  };
-
-  function toCdpCookies(cookies: CookieParam[]) {
-    return cookies.map(c => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path || '/',
-      secure: c.secure,
-      httpOnly: c.httpOnly,
-      sameSite: SAMESITE_MAP[(c.sameSite || '').toLowerCase()] || 'Lax',
-      ...(c.expirationDate ? { expires: c.expirationDate } : {}),
-    }));
-  }
-
-  // Inject cookies into the browser sidecar of `project` via CDP. The script
-  // runs inside the project container (which shares network namespace with
-  // its browser sidecar, so CDP at localhost:9222 is reachable from there).
-  // `waitMs` controls how long to retry connecting to CDP — used for the
-  // auto-inject-on-start path where the sidecar may not be ready yet.
-  function injectCookiesIntoSidecar(project: string, cookies: CookieParam[], waitMs = 0): { ok: boolean; error?: string } {
-    const containerName = `${COMPOSE_PROJECT}-${project}-1`;
-    if (getContainerStatus(containerName) !== 'running') {
-      return { ok: false, error: 'Project container is not running' };
-    }
-    const cdpCookies = toCdpCookies(cookies);
-    const deadline = Date.now() + waitMs;
-
-    const script = `
-      const http = require('http');
-      const crypto = require('crypto');
-      const cookies = ${JSON.stringify(cdpCookies)};
-      const deadline = ${deadline};
-
-      function get(url) {
-        return new Promise((resolve, reject) => {
-          http.get(url, res => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve(JSON.parse(data)));
-          }).on('error', reject);
-        });
-      }
-      function rawWsSend(wsUrl, message) {
-        return new Promise((resolve, reject) => {
-          const u = new URL(wsUrl);
-          const key = crypto.randomBytes(16).toString('base64');
-          const req = http.request({
-            hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, method: 'GET',
-            headers: { 'Upgrade': 'websocket', 'Connection': 'Upgrade', 'Sec-WebSocket-Key': key, 'Sec-WebSocket-Version': '13' },
-          });
-          req.on('upgrade', (res, socket) => {
-            const payload = Buffer.from(message);
-            const mask = crypto.randomBytes(4);
-            let header;
-            if (payload.length < 126) {
-              header = Buffer.alloc(6); header[0] = 0x81; header[1] = 0x80 | payload.length; mask.copy(header, 2);
-            } else if (payload.length < 65536) {
-              header = Buffer.alloc(8); header[0] = 0x81; header[1] = 0x80 | 126; header.writeUInt16BE(payload.length, 2); mask.copy(header, 4);
-            } else {
-              header = Buffer.alloc(14); header[0] = 0x81; header[1] = 0x80 | 127; header.writeBigUInt64BE(BigInt(payload.length), 2); mask.copy(header, 10);
-            }
-            const masked = Buffer.alloc(payload.length);
-            for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
-            socket.write(Buffer.concat([header, masked]));
-            let buf = Buffer.alloc(0);
-            socket.on('data', chunk => {
-              buf = Buffer.concat([buf, chunk]);
-              if (buf.length < 2) return;
-              let offset = 2;
-              let len = buf[1] & 0x7f;
-              if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); offset = 4; }
-              else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); offset = 10; }
-              if (buf.length < offset + len) return;
-              const data = buf.slice(offset, offset + len).toString();
-              socket.destroy();
-              try { resolve(JSON.parse(data)); } catch { resolve(data); }
-            });
-            socket.on('error', reject);
-          });
-          req.on('error', reject);
-          req.end();
-        });
-      }
-      async function getTargetsWithRetry() {
-        while (true) {
-          try { return await get('http://localhost:9222/json'); }
-          catch (e) {
-            if (Date.now() > deadline) throw new Error('CDP not reachable: ' + e.message);
-            await new Promise(r => setTimeout(r, 1000));
-          }
-        }
-      }
-      (async () => {
-        const targets = await getTargetsWithRetry();
-        const page = targets.find(t => t.type === 'page');
-        if (!page) throw new Error('No page target found in CDP');
-        const wsUrl = page.webSocketDebuggerUrl;
-        if (!wsUrl) throw new Error('No WebSocket debugger URL from CDP');
-        const result = await rawWsSend(wsUrl, JSON.stringify({ id: 1, method: 'Network.setCookies', params: { cookies } }));
-        console.log(JSON.stringify(result && result.error ? { error: result.error.message } : { ok: true }));
-      })().catch(e => { console.error(JSON.stringify({ error: e.message })); process.exit(1); });
-    `.trim();
-
-    const result = spawnSync('docker', [
-      'exec', containerName, 'node', '-e', script,
-    ], { encoding: 'utf-8', timeout: Math.max(20_000, waitMs + 15_000) });
-
-    if (result.status !== 0) {
-      return { ok: false, error: (result.stderr || result.stdout || '').trim() };
-    }
-    const output = result.stdout.trim();
-    try {
-      const parsed = JSON.parse(output);
-      if (parsed.error) return { ok: false, error: parsed.error };
-    } catch {
-      // Non-JSON output is fine if exit code was 0
-    }
-    return { ok: true };
-  }
-
-  // Read the latest pushed cookie snapshot and inject it into the sidecar.
-  // Used by the auto-inject-on-sidecar-start path. Async/fire-and-forget.
-  function injectStoredCookies(project: string) {
-    const cookies = readCookieSnapshot();
-    if (!cookies?.length) return;
-    setTimeout(() => {
-      const result = injectCookiesIntoSidecar(project, cookies, 30_000);
-      if (!result.ok) {
-        console.warn(`[cookie-snapshot] auto-inject into ${project} failed: ${result.error}`);
-      }
-    }, 0);
-  }
-
-  // Receive a github cookie snapshot from the host extension SW.
-  app.post('/api/browser/cookie-snapshot', (req: Request, res: Response) => {
-    try {
-      const { cookies } = req.body as { cookies: CookieParam[] };
-      if (!Array.isArray(cookies)) {
-        res.status(400).json({ error: 'cookies array is required' });
-        return;
-      }
-      fs.mkdirSync(path.dirname(COOKIE_SNAPSHOT_PATH), { recursive: true });
-      const payload = { updatedAt: Date.now(), count: cookies.length, cookies };
-      fs.writeFileSync(COOKIE_SNAPSHOT_PATH, JSON.stringify(payload));
-      res.json({ status: 'stored', count: cookies.length });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-
-  // Manual sync from the cookie-bridge UI: inject into one project AND
-  // persist the snapshot so future sidecar starts auto-inject too.
-  app.post('/api/browser/sync-cookies', async (req: Request, res: Response) => {
-    try {
-      const { project, cookies } = req.body as { project: string; cookies: CookieParam[] };
-      if (!project || !cookies?.length) {
-        res.status(400).json({ error: 'project and cookies are required' });
-        return;
-      }
-      // Persist snapshot for auto-inject on future sidecar starts.
-      try {
-        fs.mkdirSync(path.dirname(COOKIE_SNAPSHOT_PATH), { recursive: true });
-        fs.writeFileSync(COOKIE_SNAPSHOT_PATH, JSON.stringify({ updatedAt: Date.now(), count: cookies.length, cookies }));
-      } catch { /* persistence failure is non-fatal */ }
-      const result = injectCookiesIntoSidecar(project, cookies);
-      if (!result.ok) {
-        res.status(502).json({ error: `CDP cookie injection failed: ${result.error}` });
-        return;
-      }
-      res.json({ status: 'synced', count: cookies.length });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // ── GitHub session gate ─────────────────────────────────────────────────────
-  // Uploading screenshots/videos to a PR/issue (user-attachments) happens through
-  // a logged-in GitHub *browser session*, not a token — GitHub has no PAT/API path
-  // for user-attachments. The session is the cookie snapshot that gets injected
-  // into the sidecar browser on start. This gate lets the UI verify a usable
-  // session exists before a run (mirroring the Claude-auth gate) and capture one
-  // straight from the running sidecar browser after a manual sign-in.
-
-  // Does the stored snapshot contain an active GitHub login?
-  function checkGithubAuth(): { authenticated: boolean; login?: string; updatedAt?: number; count?: number; reason?: string } {
-    let snap: any;
-    try { snap = JSON.parse(fs.readFileSync(COOKIE_SNAPSHOT_PATH, 'utf-8')); }
-    catch { return { authenticated: false, reason: 'No GitHub session has been synced yet.' }; }
-    const cookies: any[] = Array.isArray(snap.cookies) ? snap.cookies : [];
-    const isGh = (c: any) => String(c.domain || '').replace(/^\./, '').endsWith('github.com');
-    const now = Date.now() / 1000;
-    const live = (c: any) => !c.expirationDate || c.expirationDate > now;
-    const gh = cookies.filter(isGh);
-    const session = gh.find(c => c.name === 'user_session' && live(c));
-    const loggedIn = gh.find(c => c.name === 'logged_in' && String(c.value).toLowerCase() === 'yes' && live(c));
-    const user = gh.find(c => c.name === 'dotcom_user');
-    const authenticated = !!(session || loggedIn);
-    return {
-      authenticated,
-      login: user?.value,
-      updatedAt: snap.updatedAt,
-      count: snap.count ?? cookies.length,
-      reason: authenticated ? undefined : 'No active GitHub login found in the synced session — sign in to github.com (with the bender browser extension) or sign in via the sidecar browser and capture it.',
-    };
-  }
-
-  // Read all cookies out of the running sidecar browser via CDP
-  // (Network.getAllCookies), using the same raw-WS bridge as the inject path.
-  function readCookiesFromSidecar(project: string): { ok: boolean; cookies?: any[]; error?: string } {
-    const containerName = `${COMPOSE_PROJECT}-${project}-1`;
-    if (getContainerStatus(containerName) !== 'running') {
-      return { ok: false, error: 'Project container is not running' };
-    }
-    const script = `
-      const http = require('http');
-      const crypto = require('crypto');
-      function get(url) {
-        return new Promise((resolve, reject) => {
-          http.get(url, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); }).on('error', reject);
-        });
-      }
-      function rawWsSend(wsUrl, message) {
-        return new Promise((resolve, reject) => {
-          const u = new URL(wsUrl);
-          const key = crypto.randomBytes(16).toString('base64');
-          const req = http.request({ hostname: u.hostname, port: u.port || 80, path: u.pathname + u.search, method: 'GET',
-            headers: { 'Upgrade': 'websocket', 'Connection': 'Upgrade', 'Sec-WebSocket-Key': key, 'Sec-WebSocket-Version': '13' } });
-          req.on('upgrade', (res, socket) => {
-            const payload = Buffer.from(message);
-            const mask = crypto.randomBytes(4);
-            let header;
-            if (payload.length < 126) { header = Buffer.alloc(6); header[0] = 0x81; header[1] = 0x80 | payload.length; mask.copy(header, 2); }
-            else if (payload.length < 65536) { header = Buffer.alloc(8); header[0] = 0x81; header[1] = 0x80 | 126; header.writeUInt16BE(payload.length, 2); mask.copy(header, 4); }
-            else { header = Buffer.alloc(14); header[0] = 0x81; header[1] = 0x80 | 127; header.writeBigUInt64BE(BigInt(payload.length), 2); mask.copy(header, 10); }
-            const masked = Buffer.alloc(payload.length);
-            for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
-            socket.write(Buffer.concat([header, masked]));
-            let buf = Buffer.alloc(0);
-            socket.on('data', chunk => {
-              buf = Buffer.concat([buf, chunk]);
-              if (buf.length < 2) return;
-              let offset = 2; let len = buf[1] & 0x7f;
-              if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); offset = 4; }
-              else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); offset = 10; }
-              if (buf.length < offset + len) return;
-              const data = buf.slice(offset, offset + len).toString();
-              socket.destroy();
-              try { resolve(JSON.parse(data)); } catch { resolve(data); }
-            });
-            socket.on('error', reject);
-          });
-          req.on('error', reject);
-          req.end();
-        });
-      }
-      (async () => {
-        const targets = await get('http://localhost:9222/json');
-        const page = targets.find(t => t.type === 'page');
-        if (!page || !page.webSocketDebuggerUrl) throw new Error('No page target in CDP');
-        const result = await rawWsSend(page.webSocketDebuggerUrl, JSON.stringify({ id: 1, method: 'Network.getAllCookies' }));
-        const cookies = (result && result.result && result.result.cookies) || [];
-        console.log(JSON.stringify({ cookies }));
-      })().catch(e => { console.error(JSON.stringify({ error: e.message })); process.exit(1); });
-    `.trim();
-
-    const result = spawnSync('docker', ['exec', containerName, 'node', '-e', script], { encoding: 'utf-8', timeout: 30_000 });
-    if (result.status !== 0) {
-      return { ok: false, error: (result.stderr || result.stdout || '').trim() || 'CDP read failed' };
-    }
-    try {
-      const parsed = JSON.parse(result.stdout.trim());
-      if (parsed.error) return { ok: false, error: parsed.error };
-      return { ok: true, cookies: parsed.cookies || [] };
-    } catch {
-      return { ok: false, error: 'Could not parse cookies from CDP' };
-    }
-  }
-
-  // Convert CDP cookies (Network.getAllCookies) into the snapshot/CookieParam
-  // shape readCookieSnapshot/toCdpCookies expect, so they round-trip on re-inject.
-  function cdpToSnapshotCookies(cdp: any[]): CookieParam[] {
-    const sameSiteRev: Record<string, string> = { None: 'no_restriction', Lax: 'lax', Strict: 'strict' };
-    return cdp.map(c => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path || '/',
-      secure: !!c.secure,
-      httpOnly: !!c.httpOnly,
-      sameSite: sameSiteRev[c.sameSite] || 'lax',
-      ...(typeof c.expires === 'number' && c.expires > 0 ? { expirationDate: c.expires } : {}),
-    })) as CookieParam[];
-  }
-
-  app.get('/api/pipelines/:name/github-auth', (_req: Request, res: Response) => {
-    try { res.json(checkGithubAuth()); }
-    catch (err) { res.status(500).json({ error: String(err) }); }
-  });
-
-  // Capture the GitHub session straight from the project's running sidecar
-  // browser (after the user signs in there) and persist it as the snapshot, so
-  // it survives sidecar restarts and is what future runs inject.
-  app.post('/api/pipelines/:name/github-auth/capture', (req: Request, res: Response) => {
-    try {
-      const project = req.params.name;
-      const read = readCookiesFromSidecar(project);
-      if (!read.ok) {
-        return res.status(502).json({ error: read.error || 'Could not read cookies from the sidecar browser', ...checkGithubAuth() });
-      }
-      const ghCdp = (read.cookies || []).filter(c => String(c.domain || '').replace(/^\./, '').endsWith('github.com'));
-      if (!ghCdp.length) {
-        return res.status(200).json({ authenticated: false, reason: 'The sidecar browser has no github.com cookies yet — sign in to github.com there first, then capture.' });
-      }
-      const cookies = cdpToSnapshotCookies(ghCdp);
-      try {
-        fs.mkdirSync(path.dirname(COOKIE_SNAPSHOT_PATH), { recursive: true });
-        fs.writeFileSync(COOKIE_SNAPSHOT_PATH, JSON.stringify({ updatedAt: Date.now(), count: cookies.length, cookies }));
-      } catch { /* persistence failure is non-fatal */ }
-      res.json(checkGithubAuth());
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
 
 

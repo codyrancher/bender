@@ -1,6 +1,6 @@
 ---
 name: rancher-pr-create
-description: Push and open a draft PR upstream to rancher/dashboard following the rancher PR template, embedding the recorded before/after demonstration via the browser sidecar. Use as the final step once committed.
+description: Push and open a draft PR upstream to rancher/dashboard following the rancher PR template, embedding the recorded before/after demonstration (media hosted as gh release assets on your fork). Use as the final step once committed.
 ---
 
 Open a polished **draft** pull request upstream to rancher/dashboard. The fix is already committed on a branch by the commit stage — this stage pushes it, uploads the recorded media so it embeds inline, and fills out the rancher PR template.
@@ -15,48 +15,41 @@ BR="$(git rev-parse --abbrev-ref HEAD)"   # the commit stage named it e.g. issue
 git push -u origin "$BR"
 ```
 
-## 1. Upload the before/after media so it embeds inline
+## 1. Upload the before/after media (via `gh`, hosted on a fork prerelease)
 
-GitHub renders an inline `<video>`/image player **only** for files uploaded as
-`user-attachments`, and that upload needs a logged-in GitHub **browser session** —
-a PAT, OAuth token, or HTTP proxy cannot do it. The browser sidecar carries the
-synced session, so upload through it with the bundled script:
+All GitHub interaction goes through `gh` (token auth). GitHub has no API/token path
+for the inline-`<video>` `user-attachments` host, so host the media as **release
+assets on your fork** and reference them in the PR body. Images render inline from
+any URL; for videos, embed the first frame as a clickable thumbnail that links to
+the `.webm`.
 
 ```bash
-wait-for-sidecars browser
-node .claude/skills/rancher-pr-create/upload-github-assets.mjs \
-  "${ISSUE_URL:-https://github.com/rancher/dashboard/issues/$N}" \
-  /workspace/videos/before-fix.webm \
-  /workspace/videos/after-fix.webm \
-  /workspace/screenshots/*.png
+FORK="$(gh repo view --json nameWithOwner -q .nameWithOwner)"   # the fork you pushed to (origin)
+TAG="issue-$N-artifacts"
+ls /workspace/videos /workspace/screenshots 2>/dev/null          # only reference files that exist
+
+# First-frame poster for each video, so the PR shows a clickable thumbnail.
+for v in /workspace/videos/*.webm; do
+  [ -e "$v" ] || continue
+  ffmpeg -y -i "$v" -frames:v 1 "${v%.webm}-poster.png"
+done
+
+# Upload to a prerelease on the fork (create it once; re-run uploads with --clobber).
+ASSETS=(/workspace/videos/*.webm /workspace/videos/*-poster.png /workspace/screenshots/*.png)
+gh release create "$TAG" --repo "$FORK" --prerelease --title "Issue $N artifacts" --notes "PR demo media" "${ASSETS[@]}" \
+  || gh release upload "$TAG" --repo "$FORK" --clobber "${ASSETS[@]}"
 ```
 
-It drives the sidecar browser (Playwright + CDP) to drag-drop each file onto a
-GitHub comment form and prints one `filename<TAB>https://github.com/user-attachments/assets/<uuid>`
-line per file. Build the `### Screenshot/Video` section from those URLs:
+Each asset is then at `https://github.com/<FORK>/releases/download/<TAG>/<filename>`.
+Build the `### Screenshot/Video` section from those URLs:
 
-- **video (`.webm`)** — put the bare `user-attachments` URL on its **own line**; GitHub auto-renders it as a `<video>` player. Do not wrap it in markdown.
-- **image (`.png`)** — use markdown image syntax: `![before](<url>)`.
+- **screenshot (`.png`)** — markdown image: `![before](<png-url>)` / `![after](<png-url>)`.
+- **video (`.webm`)** — clickable first-frame thumbnail linking to the file:
+  `[![before](<poster-url>)](<webm-url>)` (the reviewer clicks to play/download).
 
-Only reference files that actually exist — `ls /workspace/videos /workspace/screenshots` first. Pair before/after so a reviewer can see the change.
-
-### If the sidecar / GitHub session is unavailable
-
-Don't block the PR. Fall back to placeholder markers and tell the user to
-drag-drop manually:
-
-```markdown
-### Screenshot/Video
-
-<!-- TODO(manual upload): browser sidecar / GitHub session was unavailable; drag-drop each file into this section. -->
-- Before fix: `/workspace/videos/before-fix.webm`
-- After fix: `/workspace/videos/after-fix.webm`
-- Screenshots: `/workspace/screenshots/*.png`
-```
-
-List only files that exist. If the upload returns an unexpected response, save the
-raw error text and surface it rather than guessing — the upload protocol is
-undocumented and changes.
+Pair before/after so the change is obvious, and reference only files that exist —
+omit a missing one rather than linking a 404. If `gh release` fails, surface the
+error rather than guessing.
 
 ## 2. Open the draft PR
 
@@ -109,23 +102,8 @@ Fixes #<N>
 
 Fill `### Summary` with `Fixes #<N>`, and the prose sections from the actual change. Leave the checklist boxes unchecked for the user.
 
-## Last-resort media fallback (only if asked, and the browser session is truly unavailable)
-
-`user-attachments` is the only path that gives an inline **video** player. If you
-genuinely cannot use it, host **animated WebP** (GitHub's sanitizer strips
-`<video>` for non-attachment hosts, but renders WebP via markdown image syntax) on
-a prerelease of the fork:
-
-```bash
-# 1. webm → animated WebP (smaller than GIF; drop fps/scale if >1 MB)
-ffmpeg -y -i /workspace/videos/before-fix.webm -vf 'fps=15,scale=960:-2:flags=lanczos' \
-  -c:v libwebp -loop 0 -q:v 75 /workspace/videos/before-fix.webp
-
-# 2. Upload to a prerelease on the fork (gh release upload <tag> <file>… if it exists)
-gh release create issue-$N-artifacts --repo <fork> --prerelease \
-  --title "Issue $N artifacts" --notes "Artifacts for PR" \
-  /workspace/videos/*.webp /workspace/screenshots/*.png
-
-# 3. Reference via markdown image syntax — GitHub renders animated WebP inline:
-# ![before](https://github.com/<fork>/releases/download/issue-$N-artifacts/before-fix.webp)
-```
+> Tip: if a reviewer needs an inline animated preview instead of a click-to-play
+> thumbnail, convert the `.webm` to an animated WebP (`ffmpeg -i in.webm -vf
+> 'fps=15,scale=960:-2:flags=lanczos' -c:v libwebp -loop 0 -q:v 75 out.webp`),
+> upload it as another release asset, and embed it with `![demo](<webp-url>)` —
+> GitHub renders animated WebP inline via markdown image syntax.

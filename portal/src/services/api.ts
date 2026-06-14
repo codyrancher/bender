@@ -11,14 +11,6 @@ import type {
   PipelineArg,
 } from '@/types'
 
-export interface GithubAuthStatus {
-  authenticated: boolean
-  login?: string
-  updatedAt?: number
-  count?: number
-  reason?: string
-}
-
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const DEV_API_BASE = '/dev/api'
 
@@ -383,18 +375,6 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code }),
     })
-  },
-
-  // GitHub browser session (used by the agent to upload screenshots/videos to a
-  // PR/issue — that goes through a logged-in browser session, not a token).
-  async getGithubAuth(pipeline: string): Promise<GithubAuthStatus> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/github-auth`)
-  },
-
-  // Capture the session from the project's running sidecar browser (after a
-  // manual sign-in there) and persist it as the snapshot future runs inject.
-  async captureGithubSession(pipeline: string): Promise<GithubAuthStatus & { error?: string }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/github-auth/capture`, { method: 'POST' })
   },
 
   async getPipelineArgs(pipeline: string): Promise<{ args: Array<{ name: string; description: string; required: boolean; default: string; value: string }> }> {

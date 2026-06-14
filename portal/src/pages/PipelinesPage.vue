@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { api } from '@/services/api'
-import type { GithubAuthStatus } from '@/services/api'
 import type { PipelineRun } from '@/types'
 import { runNo } from '@/utils/pipelineFormat'
 import PipelineCard from '../components/PipelineCard.vue'
@@ -13,7 +12,6 @@ import CreatePipelineModal from '../components/CreatePipelineModal.vue'
 import PipelineArgsModal from '../components/PipelineArgsModal.vue'
 import DeletePipelineConfirm from '../components/DeletePipelineConfirm.vue'
 import ClaudeAuthModal from '../components/ClaudeAuthModal.vue'
-import GithubAuthModal from '../components/GithubAuthModal.vue'
 import ArtifactViewers from '../components/ArtifactViewers.vue'
 
 const pipelinesStore = usePipelinesStore()
@@ -33,7 +31,6 @@ const showNew = ref(false)
 const argsPipeline = ref<string | null>(null)
 const deleteTarget = ref<string | null>(null)
 const claudeGate = ref<string | null>(null)
-const githubGate = ref<{ pipeline: string; status: GithubAuthStatus } | null>(null)
 
 const viewers = ref<InstanceType<typeof ArtifactViewers> | null>(null)
 
@@ -131,13 +128,6 @@ async function toggleRun(pipeline: string, e: Event) {
       claudeGate.value = pipeline
       return
     }
-    // Soft-gate on a GitHub browser session (needed only by upload/PR stages).
-    const gh = await api.getGithubAuth(pipeline)
-    if (!gh.authenticated) {
-      setStarting(pipeline, false)
-      githubGate.value = { pipeline, status: gh }
-      return
-    }
     await startRun(pipeline)
   } catch {
     // leave it to the next poll/fetch to reflect reality
@@ -155,11 +145,6 @@ async function startRun(pipeline: string) {
 
 function onClaudeAuthed(pipeline: string) {
   claudeGate.value = null
-  startRun(pipeline)
-}
-
-function onGithubProceed(pipeline: string) {
-  githubGate.value = null
   startRun(pipeline)
 }
 
@@ -242,7 +227,6 @@ function latestRun(pipeline: string): PipelineRun | null {
 
         <div v-if="!pipelines.length" class="empty-state">
           <p>No pipelines yet</p>
-          <button class="btn-new" @click="showNew = true">Create your first pipeline</button>
         </div>
       </div>
     </div>
@@ -263,13 +247,6 @@ function latestRun(pipeline: string): PipelineRun | null {
     <PipelineArgsModal v-if="argsPipeline" :pipeline="argsPipeline" @close="argsPipeline = null" />
     <DeletePipelineConfirm v-if="deleteTarget" :pipeline="deleteTarget" @close="deleteTarget = null" />
     <ClaudeAuthModal v-if="claudeGate" :pipeline="claudeGate" @close="claudeGate = null" @authenticated="onClaudeAuthed" />
-    <GithubAuthModal
-      v-if="githubGate"
-      :pipeline="githubGate.pipeline"
-      :status="githubGate.status"
-      @close="githubGate = null"
-      @proceed="onGithubProceed"
-    />
 
     <ArtifactViewers ref="viewers" />
   </div>
