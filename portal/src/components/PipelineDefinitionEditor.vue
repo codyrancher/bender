@@ -7,7 +7,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '@/services/api'
 import { parsePipeline } from '@/utils/pipelineDefinition'
 import PipelineGraphPreview from './PipelineGraphPreview.vue'
-import Tabs from './primitives/Tabs.vue'
+import FolderTabs from './primitives/FolderTabs.vue'
 
 interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }>; claudeMd: string }
 
@@ -171,9 +171,9 @@ function jumpToStage(index: number) {
       <PipelineGraphPreview :stages="lastValidStages" @jump="jumpToStage" />
     </div>
 
-    <div class="defs-section">
+    <div class="defs-section editor-section">
       <div class="defs-section-title defs-editor-head">
-        <Tabs
+        <FolderTabs
           v-model="editorTab"
           :tabs="[{ key: 'pipeline', label: 'pipeline.yaml', dirty }, { key: 'claude', label: 'CLAUDE.md', dirty: claudeDirty }]"
         />
@@ -181,38 +181,39 @@ function jumpToStage(index: number) {
         <span v-else class="defs-hint">— the agent's instructions at run time (replaces the template's)</span>
       </div>
 
-      <!-- CLAUDE.md editor -->
-      <div v-show="editorTab === 'claude'">
-        <textarea
-          v-model="editClaude"
-          class="pdef-textarea"
-          spellcheck="false"
-          placeholder="# Project instructions for the agent…"
-        ></textarea>
-        <div v-if="claudeError" class="pdef-save-error">{{ claudeError }}</div>
-        <div class="pdef-actions">
-          <span v-if="claudeDirty" class="pdef-dirty">● Unsaved changes</span>
-          <button
-            class="pdef-save"
-            :disabled="claudeSaving || !claudeDirty"
-            @click="saveDefinitionClaude"
-          >
-            {{ claudeSaving ? 'Saving…' : 'Save & commit' }}
-          </button>
+      <div class="editor-panel">
+        <!-- CLAUDE.md editor -->
+        <div v-show="editorTab === 'claude'">
+          <textarea
+            v-model="editClaude"
+            class="pdef-textarea"
+            spellcheck="false"
+            placeholder="# Project instructions for the agent…"
+          ></textarea>
+          <div v-if="claudeError" class="pdef-save-error">{{ claudeError }}</div>
+          <div class="pdef-actions">
+            <span v-if="claudeDirty" class="pdef-dirty">● Unsaved changes</span>
+            <button
+              class="pdef-save"
+              :disabled="claudeSaving || !claudeDirty"
+              @click="saveDefinitionClaude"
+            >
+              {{ claudeSaving ? 'Saving…' : 'Save & commit' }}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <!-- pipeline.yaml editor -->
-      <div v-show="editorTab === 'pipeline'">
-        <textarea
-          ref="mdTextarea"
-          v-model="editMd"
-          class="pdef-textarea"
-          spellcheck="false"
-          placeholder="name: My Pipeline&#10;stages:&#10;  - name: Build&#10;    skill: build&#10;    successCriteria: compiles cleanly&#10;    next: [Test, Lint]"
-        ></textarea>
+        <!-- pipeline.yaml editor -->
+        <div v-show="editorTab === 'pipeline'">
+          <textarea
+            ref="mdTextarea"
+            v-model="editMd"
+            class="pdef-textarea"
+            spellcheck="false"
+            placeholder="name: My Pipeline&#10;stages:&#10;  - name: Build&#10;    skill: build&#10;    successCriteria: compiles cleanly&#10;    next: [Test, Lint]"
+          ></textarea>
 
-        <div class="pdef-validation" :class="validation.ok ? 'ok' : 'bad'">
+          <div class="pdef-validation" :class="validation.ok ? 'ok' : 'bad'">
           <template v-if="validation.ok">✓ Valid — forms a pipeline and all skills are available.</template>
           <template v-else>
             <div class="pdef-verr">
@@ -247,6 +248,7 @@ function jumpToStage(index: number) {
             {{ pdefSaving ? 'Saving…' : 'Save & commit' }}
           </button>
         </div>
+        </div>
       </div>
     </div>
 
@@ -274,8 +276,28 @@ function jumpToStage(index: number) {
 
 .defs-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--color-text-muted); opacity: 0.7; }
 
-/* editor section header: tab strip + contextual hint on one line */
-.defs-editor-head { display: flex; align-items: center; gap: 10px; }
+/* The editor's folder tabs connect into a panel whose surface is the darker
+   input color, so set the shared tab surface var to match. */
+.editor-section { --folder-tab-surface: var(--color-bg-primary); }
+
+/* editor section header: folder-tab strip + contextual hint, bottom-aligned so
+   the active tab sits on the panel's top edge (no gap below). */
+.defs-editor-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 0;
+}
+.defs-editor-head .defs-hint { padding-bottom: 9px; }
+
+/* Connected surface the active folder tab merges into (mirrors TabbedPage's
+   panel, in the darker editor color). */
+.editor-panel {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) var(--radius-lg);
+  padding: 14px;
+}
 
 .defs-skills { display: flex; flex-wrap: wrap; gap: 6px; }
 
@@ -290,22 +312,22 @@ function jumpToStage(index: number) {
 .defs-empty { font-size: 12px; color: var(--color-text-muted); }
 
 /* ── pipeline.yaml / CLAUDE.md editor ── */
+/* The .editor-panel is the surface + border now, so the textarea is bare. */
 .pdef-textarea {
+  display: block;
   width: 100%;
   min-height: 280px;
   resize: vertical;
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-medium);
-  border-radius: 6px;
+  background: transparent;
+  border: none;
   color: var(--color-text-primary);
   font-family: 'SF Mono', Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.6;
-  padding: 12px 14px;
+  padding: 0;
   outline: none;
   tab-size: 2;
 }
-.pdef-textarea:focus { border-color: var(--color-accent); }
 
 .pdef-validation {
   margin-top: 10px;

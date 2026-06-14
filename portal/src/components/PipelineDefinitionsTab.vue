@@ -126,10 +126,12 @@ async function onImported(id: string) {
   flex: 1;
   display: flex;
   min-height: 0;
+  min-width: 0; /* allow the row to shrink so .defs-detail's overflow scrollers engage */
 }
 
 .defs-detail {
   flex: 1;
+  min-width: 0; /* let children (the graph scroller) constrain width instead of overflowing */
   overflow-y: auto;
   padding: 20px 24px;
 }

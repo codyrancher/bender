@@ -122,6 +122,7 @@ async function onSaved() {
   flex: 1;
   display: flex;
   min-height: 0;
+  min-width: 0; /* allow the row to shrink so detail-pane overflow scrollers engage */
 }
 
 .skills-detail {

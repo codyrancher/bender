@@ -4,7 +4,7 @@
 // self-contained component.
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import Tabs from '../components/primitives/Tabs.vue'
+import TabbedPage from '../components/primitives/TabbedPage.vue'
 import SkillDefinitionsPanel from '../components/SkillDefinitionsPanel.vue'
 import PipelineDefinitionsTab from '../components/PipelineDefinitionsTab.vue'
 
@@ -27,42 +27,23 @@ watch(activeTab, (tab) => {
 </script>
 
 <template>
-  <div class="defs-page">
-    <div class="page-header">
-      <h1>Definitions</h1>
-      <Tabs
-        v-model="activeTab"
-        :tabs="[{ key: 'pipelines', label: 'Pipelines' }, { key: 'skills', label: 'Skills' }]"
-      />
-    </div>
-
-    <SkillDefinitionsPanel v-if="activeTab === 'skills'" />
-    <PipelineDefinitionsTab v-show="activeTab === 'pipelines'" />
-  </div>
+  <TabbedPage
+    v-model="activeTab"
+    title="Definitions"
+    :tabs="[{ key: 'pipelines', label: 'Pipelines' }, { key: 'skills', label: 'Skills' }]"
+  >
+    <!-- Wrapper divs own the show/hide: PipelineDefinitionsTab has multiple root
+         nodes (a modal sibling), so v-show on the component itself is a no-op. -->
+    <div v-show="activeTab === 'pipelines'" class="def-pane"><PipelineDefinitionsTab /></div>
+    <div v-if="activeTab === 'skills'" class="def-pane"><SkillDefinitionsPanel /></div>
+  </TabbedPage>
 </template>
 
 <style scoped>
-.defs-page {
+/* Each pane fills the panel; its child (.defs/.skills) is flex:1 and takes over. */
+.def-pane {
   flex: 1;
+  min-height: 0;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--color-bg-primary);
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--color-border-dark);
-  flex-shrink: 0;
-}
-
-.page-header h1 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
 }
 </style>
