@@ -60,8 +60,10 @@ const canWatchLiveBrowser = computed(() =>
 )
 
 // Reset the live-browser toggle only when the *selected stage* changes — not on
-// every data refresh from polling (which re-creates the detail object).
-watch(() => [props.detail.pipeline, props.detail.stageIndex], () => {
+// every data refresh from polling (which re-creates the detail object). Watch a
+// primitive key, not an array literal: a fresh array reuses no identity, so Vue
+// would fire this on every poll and slam the live view shut after ~1s.
+watch(() => `${props.detail.pipeline}#${props.detail.stageIndex}`, () => {
   showLiveBrowser.value = false
 })
 
