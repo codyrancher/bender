@@ -30,6 +30,7 @@ RUN npm install
 COPY tsconfig.json ./
 COPY src/ ./src/
 COPY pipeline-definitions/ ./pipeline-definitions/
+COPY skill-definitions/ ./skill-definitions/
 RUN npm run build
 
 EXPOSE 8080
