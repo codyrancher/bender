@@ -10,66 +10,22 @@
 //
 // Lives under /data/config which is a persistent host mount, so the repo
 // survives container recreates without a docker-compose change.
-import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { HttpError } from '../utils/http';
-import { bundledDir } from '../config/constants';
+import { SKILLS_DIR, repoGit, commitAll, ensureDefinitionsRepo } from './definitionsRepo';
 
-const SKILL_DEFINITIONS_DIR = '/data/config/skill-definitions';
-// Baked-in defaults shipped in the image, used to seed the repo on first run.
-const SEED_DIR = bundledDir('skill-definitions');
-
-const GIT_NAME = 'Bender';
-const GIT_EMAIL = 'bender@local';
+// Skill definitions live under the `skills/` subdir of the shared definitions
+// repo (see definitionsRepo.ts). git runs with cwd here so history/diff pathspecs
+// scope to this subdir; commits go through commitAll (repo-wide).
+const SKILL_DEFINITIONS_DIR = SKILLS_DIR;
 
 const DEFAULT_SKILL_MD = (id: string) =>
   `---\nname: ${id}\ndescription: \n---\n\n# ${titleize(id)}\n\nDescribe what this skill does and when to use it.\n`;
 
-function git(args: string[]): { ok: boolean; stdout: string; stderr: string } {
-  const r = spawnSync('git', args, { cwd: SKILL_DEFINITIONS_DIR, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
-  return { ok: r.status === 0, stdout: r.stdout || '', stderr: r.stderr || '' };
-}
-
-function gitCommit(message: string): string {
-  git(['add', '-A']);
-  git(['-c', `user.name=${GIT_NAME}`, '-c', `user.email=${GIT_EMAIL}`, 'commit', '-m', message, '--allow-empty']);
-  // FUTURE (remote push): once a remote is configured, mirror commits upstream:
-  //   git(['push', 'origin', 'HEAD']);
-  return git(['rev-parse', 'HEAD']).stdout.trim();
-}
-
-let repoReady = false;
-function ensureRepo(): void {
-  if (repoReady) return;
-  fs.mkdirSync(SKILL_DEFINITIONS_DIR, { recursive: true });
-  if (!fs.existsSync(path.join(SKILL_DEFINITIONS_DIR, '.git'))) {
-    git(['init']);
-    git(['config', 'user.name', GIT_NAME]);
-    git(['config', 'user.email', GIT_EMAIL]);
-    // Seed from baked-in defaults (folder-per-skill) if present
-    try {
-      if (fs.existsSync(SEED_DIR)) {
-        for (const entry of fs.readdirSync(SEED_DIR, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          copyDir(path.join(SEED_DIR, entry.name), path.join(SKILL_DEFINITIONS_DIR, entry.name));
-        }
-      }
-    } catch { /* ignore seeding errors */ }
-    gitCommit('Seed skill definitions from defaults');
-  }
-  repoReady = true;
-}
-
-function copyDir(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
-  }
-}
+const git = (args: string[]) => repoGit(args, SKILL_DEFINITIONS_DIR);
+const gitCommit = (message: string) => commitAll(message);
+const ensureRepo = ensureDefinitionsRepo;
 
 function safeId(id: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id);

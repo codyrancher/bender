@@ -9,7 +9,6 @@
 //
 // Lives under /data/config which is a persistent host mount, so the repo
 // survives container recreates without a docker-compose change.
-import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { HttpError } from '../utils/http';
@@ -17,58 +16,22 @@ import { listSkillDefinitions, getSkillDefinition } from './skillDefinitions';
 import { getTemplateClaudeMd } from './templates';
 import { parsePipelineSpec, validatePipeline, markdownToYaml } from '../utils/pipelineParser';
 import { bundledDir } from '../config/constants';
+import { PIPELINES_DIR, repoGit, commitAll, ensureDefinitionsRepo } from './definitionsRepo';
 
 // Template whose CLAUDE.md seeds a new definition's CLAUDE.md by default (every
 // pipeline gets this template's environment unless another is requested).
 const DEFAULT_CLAUDE_TEMPLATE = 'rancher-dashboard';
 
-const DEFINITIONS_DIR = '/data/config/pipeline-definitions';
-// Baked-in defaults shipped in the image, used to seed the repo on first run.
+// Pipeline definitions live under the `pipelines/` subdir of the shared
+// definitions repo (see definitionsRepo.ts). git runs with cwd here so history/
+// diff pathspecs scope to this subdir; commits go through commitAll (repo-wide).
+const DEFINITIONS_DIR = PIPELINES_DIR;
+// Baked-in defaults — used by the CLAUDE.md backfill (seeding lives in the repo module).
 const SEED_DIR = bundledDir('pipeline-definitions');
 
-const GIT_NAME = 'Bender';
-const GIT_EMAIL = 'bender@local';
-
-function git(args: string[]): { ok: boolean; stdout: string; stderr: string } {
-  const r = spawnSync('git', args, { cwd: DEFINITIONS_DIR, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 });
-  return { ok: r.status === 0, stdout: r.stdout || '', stderr: r.stderr || '' };
-}
-
-function gitCommit(message: string): string {
-  git(['add', '-A']);
-  git(['-c', `user.name=${GIT_NAME}`, '-c', `user.email=${GIT_EMAIL}`, 'commit', '-m', message, '--allow-empty']);
-  // FUTURE (remote push): once a remote is configured (e.g. via a settings key
-  // `definitionsRemote` + credentials), uncomment to mirror commits upstream:
-  //   git(['push', 'origin', 'HEAD']);
-  return git(['rev-parse', 'HEAD']).stdout.trim();
-}
-
-let repoReady = false;
-function ensureRepo(): void {
-  if (repoReady) return;
-  fs.mkdirSync(DEFINITIONS_DIR, { recursive: true });
-  if (!fs.existsSync(path.join(DEFINITIONS_DIR, '.git'))) {
-    git(['init']);
-    git(['config', 'user.name', GIT_NAME]);
-    git(['config', 'user.email', GIT_EMAIL]);
-    // Seed from baked-in flat *.pipeline.yaml defaults → folder-per-definition
-    try {
-      if (fs.existsSync(SEED_DIR)) {
-        for (const f of fs.readdirSync(SEED_DIR).filter(x => x.endsWith('.pipeline.yaml'))) {
-          const id = f.replace('.pipeline.yaml', '');
-          const dir = path.join(DEFINITIONS_DIR, id);
-          fs.mkdirSync(dir, { recursive: true });
-          fs.copyFileSync(path.join(SEED_DIR, f), path.join(dir, 'pipeline.yaml'));
-          // Optional companion `<id>.CLAUDE.md` seeds the definition's CLAUDE.md.
-          const claudeSeed = path.join(SEED_DIR, `${id}.CLAUDE.md`);
-          if (fs.existsSync(claudeSeed)) fs.copyFileSync(claudeSeed, path.join(dir, 'CLAUDE.md'));
-        }
-      }
-    } catch { /* ignore seeding errors */ }
-    gitCommit('Seed definitions from defaults');
-  }
-  repoReady = true;
-}
+const git = (args: string[]) => repoGit(args, DEFINITIONS_DIR);
+const gitCommit = (message: string) => commitAll(message);
+const ensureRepo = ensureDefinitionsRepo;
 
 function safeId(id: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id);

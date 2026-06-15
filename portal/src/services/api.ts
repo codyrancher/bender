@@ -14,6 +14,26 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const DEV_API_BASE = '/dev/api'
 
+export interface SyncStatus {
+  configured: boolean
+  url?: string
+  branch: string
+  localBranch: string
+  dirty: boolean
+  conflicted: boolean
+  conflictedFiles: string[]
+  ahead: number
+  behind: number
+  remoteExists: boolean
+  lastCommit: string
+  hasToken: boolean
+  fetchError?: string
+}
+
+export type SyncPullResult =
+  | { ok: true; conflicted: false; output: string }
+  | { ok: false; conflicted: true; files: string[] }
+
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
   const data = await response.json()
@@ -386,6 +406,35 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ values }),
+    })
+  },
+
+  // --- Definitions repo sync (one repo holding pipelines + skills <-> git remote) ---
+  async getSyncStatus(): Promise<SyncStatus> {
+    return fetchJSON(`${API_BASE}/definitions/sync/status`)
+  },
+
+  async setSyncRemote(url: string, branch: string): Promise<SyncStatus> {
+    return fetchJSON(`${API_BASE}/definitions/sync/remote`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, branch }),
+    })
+  },
+
+  async syncPush(): Promise<{ ok: true; output: string }> {
+    return fetchJSON(`${API_BASE}/definitions/sync/push`, { method: 'POST' })
+  },
+
+  async syncPull(): Promise<SyncPullResult> {
+    return fetchJSON(`${API_BASE}/definitions/sync/pull`, { method: 'POST' })
+  },
+
+  async syncResolve(strategy: 'theirs' | 'ours' | 'abort'): Promise<{ ok: true; strategy: string }> {
+    return fetchJSON(`${API_BASE}/definitions/sync/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy }),
     })
   },
 }

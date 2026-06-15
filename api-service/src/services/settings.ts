@@ -12,6 +12,9 @@ export interface Settings {
   portRange: PortRange;
   keys?: Record<string, string>;
   templateKeys?: Record<string, Record<string, string>>;
+  // Remote for the shared definitions repo (push/pull). Non-secret: the URL +
+  // branch only; auth uses the mounted GitHub token at request time.
+  definitionsRemote?: { url: string; branch: string };
 }
 
 export function readSettings(): Settings {
