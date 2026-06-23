@@ -674,7 +674,6 @@ export function registerRoutes(app: Express): void {
   // Check whether the Claude CLI that runs stages is authenticated, and drive an
   // OAuth sign-in when it isn't, so a run can be gated on valid auth.
   function checkClaudeAuth(container: string): { authenticated: boolean; method: string; loggedIn: boolean } {
-    if (process.env.ANTHROPIC_API_KEY) return { authenticated: true, method: 'apiKey', loggedIn: false };
     const r = spawnSync('docker', ['exec', '-u', '1000:1000', '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`, container, 'claude', 'auth', 'status'], { encoding: 'utf-8' });
     let loggedIn = false, method = 'none';
     try { const j = JSON.parse((r.stdout || '').trim()); loggedIn = !!j.loggedIn; method = j.authMethod || 'none'; } catch { /* not logged in / not running */ }

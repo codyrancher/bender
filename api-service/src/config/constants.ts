@@ -58,7 +58,6 @@ export const ENV_KEY_MAP: Record<string, string> = {
 // are NEVER written into scaffolded files — tooling inside the container reads
 // them straight from the environment.
 export const CONTAINER_CRED_ENV = [
-  'ANTHROPIC_API_KEY', // authenticates the Claude CLI that executes pipeline stages
   'AWS_ACCESS_KEY_ID',
   'AWS_SECRET_ACCESS_KEY',
   'AWS_DEFAULT_REGION',
