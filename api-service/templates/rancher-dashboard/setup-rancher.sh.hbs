@@ -78,23 +78,13 @@ curl -sk "${RANCHER_URL}/v3/settings/first-login" \
     -H "Content-Type: application/json" \
     -d '{"value": "false"}' > /dev/null 2>&1
 
-{{#if rancherPublicUrl}}
-# Set server-url for external access
-echo "Setting server-url to {{{rancherPublicUrl}}}..."
-curl -sk "${RANCHER_URL}/v3/settings/server-url" \
-    -X PUT \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{"value": "{{{rancherPublicUrl}}}"}' > /dev/null 2>&1
-{{else}}
-# Clear server-url so dashboard uses window.location.origin
+# Clear server-url so the dashboard uses window.location.origin
 echo "Clearing server-url..."
 curl -sk "${RANCHER_URL}/v3/settings/server-url" \
     -X PUT \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
     -d '{"value": ""}' > /dev/null 2>&1
-{{/if}}
 
 # Set agent-tls-mode
 echo "Setting agent-tls-mode..."

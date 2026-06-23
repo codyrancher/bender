@@ -5,7 +5,6 @@ import { usePipelinesStore } from '@/stores/pipelines'
 import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 import HarnessToolbar from './HarnessToolbar.vue'
-import PortForwardControl from './PortForwardControl.vue'
 import ExternalLinkIcon from '@/assets/icons/external-link.svg?component'
 import SplitIcon from '@/assets/icons/split.svg?component'
 import RefreshIcon from '@/assets/icons/refresh.svg?component'
@@ -85,7 +84,6 @@ function toggleSplit() {
         </div>
       </div>
       <div class="toolbar-buttons">
-        <PortForwardControl v-if="pipelineId && isRunning" :pipeline-id="pipelineId" />
         <button
           v-if="pipelineId && browserPort"
           class="toolbar-btn icon-btn"

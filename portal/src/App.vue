@@ -26,7 +26,6 @@ watch(pipelineId, async (id) => {
 onMounted(async () => {
   await pipelinesStore.fetchPipelines()
   pipelinesStore.connectEvents()
-  pipelinesStore.fetchPortForwards()
 
   // The pipeline routes load their pipeline (which clears the loading overlay);
   // every other route has nothing to load, so drop the overlay immediately.

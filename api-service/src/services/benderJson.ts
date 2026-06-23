@@ -13,7 +13,6 @@ export interface BenderJson {
   sidecars: string[];
   browserPort?: number;
   browserHost?: string;
-  externalPorts?: Record<string, number>;
   vars?: Record<string, string>;
   args?: Record<string, string>;
 }

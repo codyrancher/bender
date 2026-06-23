@@ -1,15 +1,9 @@
-// Persisted settings (port range + key overrides) and environment-sourced keys.
+// Persisted settings (key overrides + definitions remote) and env-sourced keys.
 import fs from 'fs';
 import path from 'path';
 import { SETTINGS_PATH, ENV_KEY_MAP } from '../config/constants';
 
-export interface PortRange {
-  start: number;
-  end: number;
-}
-
 export interface Settings {
-  portRange: PortRange;
   keys?: Record<string, string>;
   templateKeys?: Record<string, Record<string, string>>;
   // Remote for the shared definitions repo (push/pull). Non-secret: the URL +
@@ -18,14 +12,12 @@ export interface Settings {
 }
 
 export function readSettings(): Settings {
-  const defaults: Settings = { portRange: { start: 8200, end: 8299 } };
   try {
     if (fs.existsSync(SETTINGS_PATH)) {
-      const data = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
-      return { ...defaults, ...data };
+      return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')) as Settings;
     }
   } catch { /* use defaults */ }
-  return defaults;
+  return {};
 }
 
 export function writeSettings(settings: Settings): void {
@@ -41,25 +33,4 @@ export function envKeys(): Record<string, string> {
     if (v) out[keyId] = v;
   }
   return out;
-}
-
-let cachedExternalIp: string | null = null;
-let ipCacheTime = 0;
-const IP_CACHE_TTL = 300_000; // 5 minutes
-
-export async function getExternalIp(): Promise<string> {
-  if (cachedExternalIp && Date.now() - ipCacheTime < IP_CACHE_TTL) {
-    return cachedExternalIp;
-  }
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch('https://api.ipify.org', { signal: controller.signal });
-    clearTimeout(timeout);
-    cachedExternalIp = (await resp.text()).trim();
-    ipCacheTime = Date.now();
-    return cachedExternalIp;
-  } catch {
-    return cachedExternalIp || 'unavailable';
-  }
 }

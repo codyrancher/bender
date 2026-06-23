@@ -23,7 +23,6 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{gitEmail}}` | User's git email from gitconfig |
 | `{{nodeVersion}}` | Node version (if specified during project creation) |
 | `{{rancherTag}}` | Rancher tag (if specified during project creation) |
-| `{{rancherPublicUrl}}` | Public URL for rancher (auto-generated for rancher templates) |
 
 > **Credentials are NOT template variables.** Secrets (GitHub token,
 > AWS/DigitalOcean cloud keys) are injected into the container as

@@ -4,7 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import { app } from './app';
 import { DATA_DIR, PIPELINES_DIR } from './config/constants';
-import { initPortForwards } from './services/portForward';
 import { attachCliServer } from './services/cli';
 import { attachEventsServer } from './services/events';
 import { migratePipelineMdToYaml } from './services/migrate';
@@ -25,5 +24,4 @@ attachEventsServer(server);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`API server running on port ${PORT}`);
-  initPortForwards();
 });

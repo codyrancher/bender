@@ -24,7 +24,6 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{githubToken}}` | GitHub OAuth token from gh CLI config |
 | `{{nodeVersion}}` | Node version (if specified during project creation) |
 | `{{rancherTag}}` | Rancher tag (if specified during project creation) |
-| `{{rancherPublicUrl}}` | Public URL for rancher (auto-generated for rancher templates) |
 
 ### Metadata files (not copied to projects)
 These files configure the template itself and are NOT scaffolded:

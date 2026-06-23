@@ -116,21 +116,4 @@ export interface UploadResponse {
   error?: string
 }
 
-export interface PortRange {
-  start: number
-  end: number
-}
-
-export interface PortAllocation {
-  port: number
-  pipeline: string
-  service: string
-}
-
-export interface SettingsResponse {
-  portRange: PortRange
-  allocations: PortAllocation[]
-  externalIp: string
-  keys: Record<string, string>
-}
 

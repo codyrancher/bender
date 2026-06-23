@@ -21,8 +21,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
   const harnessOperationActive = ref(false)
   const harnessLogs = ref<string[]>([])
 
-  const portForwards = ref<Array<{ publicPort: number; localPort: number; pipeline: string }>>([])
-
   let ws: WebSocket | null = null
 
   function connectEvents() {
@@ -242,38 +240,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     }
   }
 
-  async function fetchPortForwards() {
-    try {
-      const data = await api.getForwards()
-      portForwards.value = data.forwards
-    } catch (err) {
-      console.error('Failed to fetch port forwards:', err)
-    }
-  }
-
-  async function startPortForward(pipelineName: string, publicPort: number, localPort: number) {
-    const ui = useUiStore()
-    try {
-      await api.startForward(pipelineName, publicPort, localPort)
-      await fetchPortForwards()
-      ui.showToast(`Forwarding :${publicPort} → ${pipelineName}:${localPort}`)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Port forward failed'
-      ui.showToast(message, 'error')
-    }
-  }
-
-  async function stopPortForward(publicPort: number) {
-    const ui = useUiStore()
-    try {
-      await api.stopForward(publicPort)
-      await fetchPortForwards()
-      ui.showToast(`Stopped forward on :${publicPort}`)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to stop forward'
-      ui.showToast(message, 'error')
-    }
-  }
 
   return {
     pipelines,
@@ -300,10 +266,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     harnessLogs,
     fetchHarnessStatus,
     harnessAction,
-    portForwards,
-    fetchPortForwards,
-    startPortForward,
-    stopPortForward,
     connectEvents,
   }
 })

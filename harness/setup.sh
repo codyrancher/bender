@@ -446,9 +446,6 @@ else
     echo "ws-scrcpy already running"
 fi
 
-# Pull socat image for port forwarding (if not cached)
-docker image inspect alpine/socat >/dev/null 2>&1 || docker pull alpine/socat
-
 # Sync templates to persistent volume (always, to pick up updates)
 echo "Syncing templates to /data/templates..."
 mkdir -p /data/templates

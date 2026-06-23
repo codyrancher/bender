@@ -10,27 +10,20 @@ import { materializeInto as materializeDefinition, rematerializeSkills, writeDef
 
 import {
   PIPELINES_DIR, COMPOSE_PROJECT, CLAUDE_CONFIG_DIR, STAGE_TIMEOUT_MS, BENDER_IMAGE,
-  NETWORK_NAME, DATA_DIR, SETTINGS_PATH, EXTERNAL_PORT_TARGETS, KEY_DEFAULTS,
+  NETWORK_NAME, DATA_DIR, SETTINGS_PATH, KEY_DEFAULTS,
   ENV_KEY_MAP, CONTAINER_CRED_ENV, SNAPSHOT_STAGES, BROWSER_RECORDER_JS,
 } from './config/constants';
-import { Settings, PortRange, readSettings, writeSettings, getExternalIp, envKeys } from './services/settings';
+import { readSettings, envKeys } from './services/settings';
 import { readGithubToken, credentialEnvArgs } from './services/credentials';
 import { getContainerStatus, getContainerIp, waitForContainerIp, chownRecursive } from './utils/container';
 import { BenderJson, readBenderJson, pipelineUid, pipelineArgEnvArgs } from './services/benderJson';
 import { PipelineStage, parsePipelineStages, resolveGraph, readPipelineStages, parsePipelineArgs } from './utils/pipelineParser';
 import { snapshotDir, snapshotWorkspace, restoreWorkspace } from './services/snapshots';
 import { getSidecarContainerNames, startSidecars, stopSidecars, removeSidecars } from './services/sidecars';
-import {
-  findNextAvailablePort, stopPortForward, startPortForwardAsync,
-  startPortForwardsForProject, stopPortForwardsForProject, initPortForwards,
-} from './services/portForward';
 import { runInitScript, runSidecarsUpScript } from './services/initScripts';
 import { getRunsDb, stageArtifactDir, startExecution, cancelRun, cancelActiveRunsForPipeline } from './services/runExecutor';
 import { hexId } from './utils/id';
 import { execSync } from './utils/exec';
-
-// Re-exported so server.ts (and others) keep importing it from here.
-export { initPortForwards };
 
 export function registerRoutes(app: Express): void {
   // List all projects
@@ -125,16 +118,6 @@ export function registerRoutes(app: Express): void {
       const effectiveKeys = { ...settings.keys, ...(template ? settings.templateKeys?.[template] : {}), ...envKeys() };
       const vars = getTemplateVars(projectName, effectiveKeys);
 
-      // Allocate external port for rancher templates
-      let allocatedPort: number | null = null;
-      if (template === 'rancher-dashboard') {
-        allocatedPort = findNextAvailablePort();
-        if (allocatedPort) {
-          const ip = await getExternalIp();
-          vars.rancherPublicUrl = `https://${ip}:${allocatedPort}`;
-        }
-      }
-
       // Merge request vars into template vars for Handlebars rendering
       if (requestVars.nodeVersion) vars.nodeVersion = requestVars.nodeVersion;
 
@@ -226,7 +209,6 @@ export function registerRoutes(app: Express): void {
         sidecars: sidecars.map(s => s.suffix),
         browserPort,
         ...(browserNetHost && { browserHost: browserNetHost }),
-        ...(allocatedPort && { externalPorts: { rancher: allocatedPort } }),
         ...(Object.keys(projectVars).length && { vars: projectVars }),
         ...(Object.keys(pipelineArgs).length && { args: pipelineArgs }),
       };
@@ -240,9 +222,6 @@ export function registerRoutes(app: Express): void {
       const shouldStartSidecars = req.body.startSidecars !== false;
       if (shouldStartSidecars) {
         startSidecars(projectName, sidecars);
-        if (allocatedPort) {
-          startPortForwardsForProject(projectName);
-        }
       }
 
       runInitScript(projectName);
@@ -309,7 +288,6 @@ export function registerRoutes(app: Express): void {
         }
 
         startSidecars(project);
-        startPortForwardsForProject(project);
         runInitScript(project);
         runSidecarsUpScript(project);
         broadcast('pipelines-changed');
@@ -321,7 +299,6 @@ export function registerRoutes(app: Express): void {
           return;
         }
         startSidecars(project);
-        startPortForwardsForProject(project);
         runInitScript(project);
         runSidecarsUpScript(project);
         broadcast('pipelines-changed');
@@ -338,7 +315,6 @@ export function registerRoutes(app: Express): void {
     const project = pipeline;
     const containerName = `${COMPOSE_PROJECT}-${project}-1`;
     try {
-      stopPortForwardsForProject(project);
       stopSidecars(project);
       const result = spawnSync('docker', ['stop', containerName], { encoding: 'utf-8' });
       if (result.status !== 0) {
@@ -364,7 +340,6 @@ export function registerRoutes(app: Express): void {
         return;
       }
       startSidecars(project);
-      startPortForwardsForProject(project);
       runInitScript(project);
       runSidecarsUpScript(project);
       broadcast('pipelines-changed');
@@ -392,7 +367,6 @@ export function registerRoutes(app: Express): void {
       ], { encoding: 'utf-8' });
       removeSidecars(project);
       startSidecars(project);
-      startPortForwardsForProject(project);
       runInitScript(project);
       runSidecarsUpScript(project);
       broadcast('pipelines-changed');
@@ -423,7 +397,6 @@ export function registerRoutes(app: Express): void {
         return;
       }
       startSidecars(project);
-      startPortForwardsForProject(project);
       runSidecarsUpScript(project);
       res.json({ status: 'sidecars-started', project });
     } catch (err) {
@@ -440,7 +413,6 @@ export function registerRoutes(app: Express): void {
         res.status(404).json({ error: 'Project not found' });
         return;
       }
-      stopPortForwardsForProject(project);
       stopSidecars(project);
       res.json({ status: 'sidecars-stopped', project });
     } catch (err) {
@@ -474,7 +446,6 @@ export function registerRoutes(app: Express): void {
         }
       }
 
-      stopPortForwardsForProject(project);
       await dockerAsync(['rm', '-f', containerName]);
       for (const s of getSidecarContainerNames(project)) await dockerAsync(['rm', '-f', s]);
 
@@ -1082,243 +1053,6 @@ export function registerRoutes(app: Express): void {
     });
   });
 
-  // Get settings (port range + allocations + external IP)
-  app.get('/api/settings', async (_req: Request, res: Response) => {
-    try {
-      const settings = readSettings();
-      const allocations: Array<{ port: number; project: string; service: string }> = [];
-
-      if (fs.existsSync(PIPELINES_DIR)) {
-        for (const name of fs.readdirSync(PIPELINES_DIR).sort()) {
-          const fullPath = path.join(PIPELINES_DIR, name);
-          if (!fs.statSync(fullPath).isDirectory()) continue;
-          const meta = readBenderJson(name);
-          if (meta?.externalPorts) {
-            for (const [service, port] of Object.entries(meta.externalPorts)) {
-              allocations.push({ port, project: name, service });
-            }
-          }
-        }
-      }
-
-      const externalIp = await getExternalIp();
-      res.json({ portRange: settings.portRange, allocations, externalIp, keys: settings.keys || {} });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // Update port range
-  app.put('/api/settings/port-range', (req: Request, res: Response) => {
-    try {
-      const { start, end } = req.body;
-      if (typeof start !== 'number' || typeof end !== 'number' || start >= end || start < 1024 || end > 65535) {
-        res.status(400).json({ error: 'Invalid port range. Must be 1024-65535, start < end.' });
-        return;
-      }
-      const settings = readSettings();
-      settings.portRange = { start, end };
-      writeSettings(settings);
-      res.json({ status: 'updated', portRange: settings.portRange });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // Assign external port to a project service
-
-  // Remove external port mapping
-  app.delete('/api/settings/port-mappings/:pipeline/:service', (req: Request, res: Response) => {
-    try {
-      const pipeline = req.params.pipeline;
-      const service = req.params.service;
-      const meta = readBenderJson(pipeline);
-      if (!meta) {
-        res.status(404).json({ error: 'Pipeline not found' });
-        return;
-      }
-
-      if (meta.externalPorts) {
-        delete meta.externalPorts[service];
-        if (Object.keys(meta.externalPorts).length === 0) {
-          delete meta.externalPorts;
-        }
-      }
-
-      const harnessPath = path.join(PIPELINES_DIR, pipeline, '.bender.json');
-      fs.writeFileSync(harnessPath, JSON.stringify(meta, null, 2));
-
-      res.json({ status: 'removed', pipeline, service });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // Update keys
-
-  // Delete a single key
-
-  // --- Port forwarding (map a public port to a local port in a project container) ---
-
-  // Get available public ports and listening ports for a project
-  app.get('/api/forwards/options/:pipeline', (req: Request, res: Response) => {
-    try {
-      const pipeline = req.params.pipeline;
-    const project = pipeline;
-      const settings = readSettings();
-
-      // Find used public ports (from harness.json allocations + active forwards)
-      const usedPorts = new Set<number>();
-      if (fs.existsSync(PIPELINES_DIR)) {
-        for (const name of fs.readdirSync(PIPELINES_DIR)) {
-          const fullPath = path.join(PIPELINES_DIR, name);
-          if (!fs.statSync(fullPath).isDirectory()) continue;
-          const meta = readBenderJson(name);
-          if (meta?.externalPorts) {
-            for (const port of Object.values(meta.externalPorts)) {
-              usedPorts.add(port);
-            }
-          }
-        }
-      }
-      const forwards = readPortForwards();
-      for (const f of forwards) {
-        if (getContainerStatus(`port-forward-${f.publicPort}`) === 'running') {
-          usedPorts.add(f.publicPort);
-        }
-      }
-
-      // Available public ports
-      const availablePorts: number[] = [];
-      for (let p = settings.portRange.start; p <= settings.portRange.end; p++) {
-        if (!usedPorts.has(p)) availablePorts.push(p);
-      }
-
-      // Detect listening ports inside the project container via /proc/net/tcp
-      // This works everywhere without needing ss/netstat installed
-      const containerName = `${COMPOSE_PROJECT}-${project}-1`;
-      let listeningPorts: number[] = [];
-      if (getContainerStatus(containerName) === 'running') {
-        const result = spawnSync('docker', [
-          'exec', containerName,
-          'sh', '-c', "cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | awk '$4==\"0A\"{print $2}' | grep -oE '[0-9A-F]+$' | sort -u",
-        ], { encoding: 'utf-8', timeout: 5000 });
-        if (result.status === 0 && result.stdout.trim()) {
-          const seen = new Set<number>();
-          for (const hex of result.stdout.trim().split('\n')) {
-            const port = parseInt(hex, 16);
-            if (!isNaN(port) && port > 0) seen.add(port);
-          }
-          listeningPorts = [...seen].sort((a, b) => a - b);
-        }
-      }
-
-      res.json({ availablePorts, listeningPorts });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  const PORT_FORWARDS_STATE = '/data/config/port-forwards.json';
-
-  interface PortForwardEntry {
-    publicPort: number;
-    localPort: number;
-    project: string;
-  }
-
-  function readPortForwards(): PortForwardEntry[] {
-    try {
-      if (fs.existsSync(PORT_FORWARDS_STATE)) {
-        return JSON.parse(fs.readFileSync(PORT_FORWARDS_STATE, 'utf-8'));
-      }
-    } catch {}
-    return [];
-  }
-
-  function writePortForwards(forwards: PortForwardEntry[]): void {
-    fs.writeFileSync(PORT_FORWARDS_STATE, JSON.stringify(forwards, null, 2));
-  }
-
-  // List active forwards
-  app.get('/api/forwards', (_req: Request, res: Response) => {
-    const forwards = readPortForwards().filter(f =>
-      getContainerStatus(`port-forward-${f.publicPort}`) === 'running'
-    );
-    res.json({ forwards });
-  });
-
-  // Create a port forward
-  app.post('/api/forwards', async (req: Request, res: Response) => {
-    try {
-      const { project, publicPort, localPort } = req.body;
-      if (!project || typeof project !== 'string') {
-        res.status(400).json({ error: 'project is required' });
-        return;
-      }
-      if (!publicPort || !localPort || typeof publicPort !== 'number' || typeof localPort !== 'number') {
-        res.status(400).json({ error: 'publicPort and localPort are required (numbers)' });
-        return;
-      }
-      const containerName = `${COMPOSE_PROJECT}-${project}-1`;
-      if (getContainerStatus(containerName) !== 'running') {
-        res.status(400).json({ error: `Project ${project} is not running` });
-        return;
-      }
-
-      // Stop existing forward on this public port
-      stopPortForward(publicPort);
-
-      const ip = await waitForContainerIp(containerName);
-      if (!ip) {
-        res.status(500).json({ error: `Could not get IP for ${containerName}` });
-        return;
-      }
-
-      const fwdName = `port-forward-${publicPort}`;
-      const result = spawnSync('docker', [
-        'run', '-d',
-        '--name', fwdName,
-        '--network', NETWORK_NAME,
-        '-p', `${publicPort}:${publicPort}`,
-        '--restart', 'unless-stopped',
-        'alpine/socat',
-        `TCP-LISTEN:${publicPort},fork,reuseaddr`,
-        `TCP:${ip}:${localPort}`,
-      ], { encoding: 'utf-8' });
-      if (result.status !== 0) {
-        res.status(500).json({ error: `Failed to start forward: ${result.stderr}` });
-        return;
-      }
-
-      // Update state
-      const forwards = readPortForwards().filter(f => f.publicPort !== publicPort);
-      forwards.push({ publicPort, localPort, project });
-      writePortForwards(forwards);
-
-      console.log(`Port forward: 0.0.0.0:${publicPort} -> ${ip}:${localPort} (${containerName})`);
-      res.json({ status: 'started', publicPort, localPort, project });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  // Stop a port forward
-  app.delete('/api/forwards/:publicPort', (req: Request, res: Response) => {
-    try {
-      const publicPort = parseInt(req.params.publicPort, 10);
-      if (isNaN(publicPort)) {
-        res.status(400).json({ error: 'Invalid port' });
-        return;
-      }
-      stopPortForward(publicPort);
-      const forwards = readPortForwards().filter(f => f.publicPort !== publicPort);
-      writePortForwards(forwards);
-      res.json({ status: 'stopped' });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
 }
 

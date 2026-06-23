@@ -3,8 +3,6 @@ import type {
   StatusResponse,
   CreatePipelineResponse,
   UploadResponse,
-  SettingsResponse,
-  PortRange,
   HarnessStatus,
   PipelineRun,
   PipelineStage,
@@ -159,38 +157,6 @@ export const api = {
         }
       }
     }
-  },
-
-  async getSettings(): Promise<SettingsResponse> {
-    return fetchJSON<SettingsResponse>(`${API_BASE}/settings`)
-  },
-
-  async updatePortRange(portRange: PortRange): Promise<{ status: string; portRange: PortRange }> {
-    return fetchJSON(`${API_BASE}/settings/port-range`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(portRange),
-    })
-  },
-
-  async getForwardOptions(pipeline: string): Promise<{ availablePorts: number[]; listeningPorts: number[] }> {
-    return fetchJSON(`${API_BASE}/forwards/options/${pipeline}`)
-  },
-
-  async getForwards(): Promise<{ forwards: Array<{ publicPort: number; localPort: number; pipeline: string }> }> {
-    return fetchJSON(`${API_BASE}/forwards`)
-  },
-
-  async startForward(pipeline: string, publicPort: number, localPort: number): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/forwards`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pipeline, publicPort, localPort }),
-    })
-  },
-
-  async stopForward(publicPort: number): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/forwards/${publicPort}`, { method: 'DELETE' })
   },
 
   // Git-backed global definitions (bundle pipeline.md + skills)

@@ -38,11 +38,6 @@ export const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS) || 35 * 60 
 // its exact starting state. Disabled with SNAPSHOT_STAGES=0.
 export const SNAPSHOT_STAGES = process.env.SNAPSHOT_STAGES !== '0';
 
-// Maps sidecar suffix → the internal port a public forward targets.
-export const EXTERNAL_PORT_TARGETS: Record<string, number> = {
-  rancher: 443,
-};
-
 // Default values for settings keys (used when a key is empty/unset).
 export const KEY_DEFAULTS: Record<string, string> = {
   rancherTag: 'head',
