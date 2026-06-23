@@ -43,11 +43,9 @@ stages:
 
 <template>
   <div class="schema-page">
-    <header class="schema-header">
-      <h1>pipeline.yaml schema</h1>
-    </header>
-
     <div class="schema-body">
+      <div class="schema-inner">
+      <h1 class="schema-title">pipeline.yaml schema</h1>
       <p class="lead">
         A pipeline definition is a <code>pipeline.yaml</code> file: a name, an optional
         description, an optional list of <code>args</code>, and a list of
@@ -124,6 +122,7 @@ stages:
         <h2>Full example</h2>
         <pre class="schema-example">{{ example }}</pre>
       </section>
+      </div>
     </div>
   </div>
 </template>
@@ -136,20 +135,17 @@ stages:
   overflow: hidden;
   background: var(--color-bg-primary);
 }
-.schema-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 28px;
-  border-bottom: 1px solid var(--color-border-dark);
-  flex-shrink: 0;
-}
-.schema-header h1 { font-size: 18px; font-weight: 600; color: var(--color-text-primary); margin: 0; }
+.schema-title { font-size: 20px; font-weight: 600; color: var(--color-text-primary); margin: 0 0 16px; }
 
 .schema-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px 28px 60px;
+}
+.schema-inner {
   max-width: 900px;
+  margin: 0 auto;
   font-size: 13.5px;
   color: var(--color-text-primary);
   line-height: 1.6;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { usePipelineId } from '@/composables/route'
@@ -13,6 +14,8 @@ import ClaudeCliPage from '@/components/ClaudeCliPage.vue'
 const pipelineId = usePipelineId()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
+const route = useRoute()
+// Standalone "bare" pages (e.g. the schema doc) render without the app chrome.
 
 watch(pipelineId, async (id) => {
   if (id) {
@@ -39,8 +42,8 @@ onMounted(async () => {
   <div class="main-content">
     <router-view />
   </div>
-  <ClaudeCliPage />
-  <TabBar />
+  <ClaudeCliPage v-if="!route.meta.bare" />
+  <TabBar v-if="!route.meta.bare" />
   <Toast />
   <DropOverlay />
   <NewPipelineModal />

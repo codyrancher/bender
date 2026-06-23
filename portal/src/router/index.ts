@@ -52,6 +52,7 @@ const router = createRouter({
       path: '/pipeline-schema',
       name: 'pipeline-schema',
       component: PipelineSchemaDoc,
+      meta: { bare: true },
     },
     {
       // Sub-state in the path so a refresh stays on the same tab/skill/file:
