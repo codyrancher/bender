@@ -29,9 +29,6 @@ COPY --from=portal-build /build/dist/ /app/html/
 # Copy API service (built inside DinD by setup.sh)
 COPY api-service/ /app/api-service/
 
-# Copy unpacked browser extension so it can be served via /api/extension.zip
-COPY portal/extension/ /app/extension/
-
 # Copy Claude image build context for building inside container
 COPY Dockerfile /app/claude-image/Dockerfile
 COPY entrypoint.sh /app/claude-image/entrypoint.sh

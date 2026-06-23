@@ -456,20 +456,6 @@ cp -r "$API_SRC/templates/." /data/templates/
 # Fix ownership so host user can edit template files (volume-mounted from host)
 chown -R 1000:1000 /data/templates/
 
-# Sync browser extension files. Either we have the baked-in /app/extension
-# (vanilla container build) or we have a promoted source tree.
-echo "Syncing extension to /data/extension..."
-mkdir -p /data/extension
-EXT_SRC=/app/extension
-if [ -d "/data/bender-src" ] && [ -f /data/bender-src/.promoted ]; then
-    PROMOTED_EXT=$(find_harness_src /data/bender-src)/portal/extension
-    [ -d "$PROMOTED_EXT" ] && EXT_SRC="$PROMOTED_EXT"
-fi
-if [ -d "$EXT_SRC" ]; then
-    cp -r "$EXT_SRC/." /data/extension/
-    chown -R 1000:1000 /data/extension/
-fi
-
 # Always rebuild API image to pick up code changes
 echo "Building API image from $API_SRC..."
 docker stop bender-api 2>/dev/null || true
@@ -497,7 +483,6 @@ docker run -d \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /data:/data \
     -v /data/templates:/app/templates \
-    -v /data/extension:/app/extension \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e HARNESS_GIT_URL="${HARNESS_GIT_URL}" \
     -e HARNESS_GIT_USER="${HARNESS_GIT_USER}" \

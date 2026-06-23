@@ -4,7 +4,6 @@ import { api } from '@/services/api'
 import { useUiStore } from '@/stores/ui'
 import type { PortRange, PortAllocation } from '@/types'
 import InsightsPanel from '../components/InsightsPanel.vue'
-import ExtensionStatusPanel from '../components/ExtensionStatusPanel.vue'
 import PortSettings from '../components/PortSettings.vue'
 
 const uiStore = useUiStore()
@@ -38,8 +37,6 @@ onMounted(fetchSettings)
       <div v-if="loading" class="loading">Loading settings...</div>
 
       <template v-else>
-        <ExtensionStatusPanel />
-
         <section class="section">
           <h2>External IP</h2>
           <p class="description">
