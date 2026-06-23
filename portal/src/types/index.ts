@@ -75,8 +75,6 @@ export interface Pipeline {
   stages?: PipelineStage[]
 }
 
-export type PipelineGroup = 'harness' | 'blank' | 'vue3' | 'rancher'
-
 export interface HarnessStatus {
   devRunning: boolean
   devContainerStatus: string
@@ -116,28 +114,6 @@ export interface UploadResponse {
   path: string
   filename: string
   error?: string
-}
-
-export interface TemplateKeyDef {
-  id: string
-  label: string
-  description: string
-  isText?: boolean
-  placeholder?: string
-}
-
-export interface TemplateInfo {
-  id: string
-  name: string
-  description: string
-  hasIcon: boolean
-  files: string[]
-  path: string
-  keys?: TemplateKeyDef[]
-}
-
-export interface TemplatesResponse {
-  templates: TemplateInfo[]
 }
 
 export interface PortRange {

@@ -10,7 +10,7 @@ export function formatSize(bytes?: number): string {
   return bytes + ' B'
 }
 
-export function formatDuration(ms: number | null): string {
+function formatDuration(ms: number | null): string {
   if (ms === null) return '—'
   if (ms < 1000) return `${ms}ms`
   const secs = Math.floor(ms / 1000)

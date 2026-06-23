@@ -1,18 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref, computed, watch } from 'vue'
-import type { Pipeline, PipelineGroup, HarnessStatus } from '@/types'
+import { ref, computed } from 'vue'
+import type { Pipeline, HarnessStatus } from '@/types'
 import { api } from '@/services/api'
 import { useUiStore } from './ui'
-
-const OVERRIDES_KEY = 'pipeline-group-overrides'
-const COLLAPSED_KEY = 'pipeline-groups-collapsed'
-
-const GROUP_DEFS: { id: PipelineGroup; label: string }[] = [
-  { id: 'harness', label: 'Harness' },
-  { id: 'blank', label: 'Blank' },
-  { id: 'vue3', label: 'Vue 3' },
-  { id: 'rancher', label: 'Rancher' },
-]
 
 export const usePipelinesStore = defineStore('pipelines', () => {
   const pipelines = ref<Pipeline[]>([])
@@ -20,12 +10,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
   const startingPipelines = ref<Set<string>>(new Set())
   const stoppingPipelines = ref<Set<string>>(new Set())
 
-  const groupOverrides = ref<Record<string, PipelineGroup>>(
-    JSON.parse(localStorage.getItem(OVERRIDES_KEY) || '{}'),
-  )
-  const collapsedGroups = ref<Record<string, boolean>>(
-    JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '{}'),
-  )
   const isDraggingPipeline = ref(false)
 
   const harnessStatus = ref<HarnessStatus>({
@@ -40,7 +24,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
   const portForwards = ref<Array<{ publicPort: number; localPort: number; pipeline: string }>>([])
 
   let ws: WebSocket | null = null
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   function connectEvents() {
     if (ws) return
@@ -58,7 +41,7 @@ export const usePipelinesStore = defineStore('pipelines', () => {
 
     ws.onclose = () => {
       ws = null
-      reconnectTimer = setTimeout(connectEvents, 3000)
+      setTimeout(connectEvents, 3000)
     }
 
     ws.onerror = () => {
@@ -66,75 +49,8 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     }
   }
 
-  function disconnectEvents() {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
-    if (ws) {
-      ws.onclose = null
-      ws.close()
-      ws = null
-    }
-  }
-
-  watch(groupOverrides, (val) => {
-    localStorage.setItem(OVERRIDES_KEY, JSON.stringify(val))
-  }, { deep: true })
-
-  watch(collapsedGroups, (val) => {
-    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(val))
-  }, { deep: true })
-
-  function getPipelineGroup(pipeline: Pipeline): PipelineGroup {
-    if (groupOverrides.value[pipeline.name]) {
-      return groupOverrides.value[pipeline.name]
-    }
-    switch (pipeline.template) {
-      case 'rancher-dashboard': return 'rancher'
-      case 'vue3-hello-world': return 'vue3'
-      default: return 'blank'
-    }
-  }
-
-  const groupedPipelines = computed(() => {
-    return GROUP_DEFS.map((def) => ({
-      ...def,
-      pipelines: pipelines.value
-        .filter((p) => getPipelineGroup(p) === def.id)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    }))
-  })
-
-  function isGroupCollapsed(group: PipelineGroup): boolean {
-    return collapsedGroups.value[group] ?? false
-  }
-
-  function toggleGroupCollapsed(group: PipelineGroup) {
-    collapsedGroups.value = {
-      ...collapsedGroups.value,
-      [group]: !isGroupCollapsed(group),
-    }
-  }
-
-  function setPipelineGroupOverride(pipelineName: string, group: PipelineGroup) {
-    const pl = pipelines.value.find((p) => p.name === pipelineName)
-    if (!pl || pl.template) return
-    groupOverrides.value = { ...groupOverrides.value, [pipelineName]: group }
-  }
-
   function isPipelineDraggable(pipeline: Pipeline): boolean {
     return !pipeline.template
-  }
-
-  function cleanupOverrides() {
-    const pipelineNames = new Set(pipelines.value.map((p) => p.name))
-    const cleaned = Object.fromEntries(
-      Object.entries(groupOverrides.value).filter(([name]) => pipelineNames.has(name)),
-    )
-    if (Object.keys(cleaned).length !== Object.keys(groupOverrides.value).length) {
-      groupOverrides.value = cleaned
-    }
   }
 
   const currentPipeline = computed(() => (pipelineName: string | null) =>
@@ -145,7 +61,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     try {
       const data = await api.getPipelines()
       pipelines.value = data.pipelines || []
-      cleanupOverrides()
     } catch (err) {
       console.error('Failed to fetch pipelines:', err)
       pipelines.value = []
@@ -378,10 +293,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     isPipelineRunning,
     getPipelineBrowserPort,
     getPipelineBrowserHost,
-    groupedPipelines,
-    isGroupCollapsed,
-    toggleGroupCollapsed,
-    setPipelineGroupOverride,
     isPipelineDraggable,
     isDraggingPipeline,
     harnessStatus,
@@ -394,6 +305,5 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     startPortForward,
     stopPortForward,
     connectEvents,
-    disconnectEvents,
   }
 })
