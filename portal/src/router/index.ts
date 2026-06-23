@@ -7,6 +7,7 @@ import SplitPage from '@/pages/SplitPage.vue'
 import HarnessPage from '@/pages/HarnessPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
 import DefinitionsBrowser from '@/pages/DefinitionsBrowser.vue'
+import PipelineSchemaDoc from '@/pages/PipelineSchemaDoc.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL || '/'),
@@ -46,6 +47,11 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: SettingsPage,
+    },
+    {
+      path: '/pipeline-schema',
+      name: 'pipeline-schema',
+      component: PipelineSchemaDoc,
     },
     {
       // Sub-state in the path so a refresh stays on the same tab/skill/file:

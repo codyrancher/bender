@@ -4,6 +4,7 @@
 // editor, and the bundled-skills list. Owns the working copies + parse/validation
 // (the graph and the editor share them) and emits `saved` after a commit.
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import { parsePipeline } from '@/utils/pipelineDefinition'
 import PipelineGraphPreview from './PipelineGraphPreview.vue'
@@ -13,6 +14,12 @@ interface DefDetail { id: string; name: string; content: string; stages: any[]; 
 
 const props = defineProps<{ detail: DefDetail }>()
 const emit = defineEmits<{ (e: 'saved'): void }>()
+
+const router = useRouter()
+// Open the schema reference in a new tab so editor edits aren't lost.
+function openSchemaDoc() {
+  window.open(router.resolve({ name: 'pipeline-schema' }).href, '_blank', 'noopener')
+}
 
 // A stage entry in pipeline.yaml: a list item with a `name:` key.
 const STAGE_HEADER = /^\s*-\s+name:/
@@ -238,6 +245,9 @@ function jumpToStage(index: number) {
         <div v-if="pdefError" class="pdef-save-error">{{ pdefError }}</div>
 
         <div class="pdef-actions">
+          <button type="button" class="pdef-schema-link" title="Open the pipeline.yaml schema reference" @click="openSchemaDoc">
+            pipeline.yaml schema ↗
+          </button>
           <span v-if="dirty" class="pdef-dirty">● Unsaved changes</span>
           <button
             class="pdef-save"
@@ -381,7 +391,22 @@ function jumpToStage(index: number) {
   gap: 12px;
   margin-top: 12px;
 }
-.pdef-dirty { font-size: 11px; color: var(--color-warning); margin-right: auto; }
+.pdef-dirty { font-size: 11px; color: var(--color-warning); }
+
+/* Pins to the bottom-left of the action bar; pushes the dirty + save buttons right. */
+.pdef-schema-link {
+  margin-right: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-medium);
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.pdef-schema-link:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
 .pdef-save {
   padding: 8px 18px;
