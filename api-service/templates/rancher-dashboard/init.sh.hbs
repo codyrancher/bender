@@ -209,23 +209,6 @@ fi
 # Rancher-specific setup (needs the rancher sidecar reachable) is now in
 # on-sidecars-up.sh — it runs when sidecars transition from stopped → running.
 
-# Pre-warm the dev server (https://localhost:8005). The first webpack compile is
-# the single most expensive step in the whole pipeline (minutes), and the verify
-# stage used to pay it cold. Starting `yarn dev` here lets that cold compile run
-# in the background during the early stages (reproduce/decide/record all use the
-# stock instance on :8443, not :8005). By the time fix-create edits the code, the
-# server is already up and only does a fast *incremental* HMR recompile.
-# Independent of the rancher backend — compilation doesn't need the sidecars.
-if [ -d /workspace/dashboard/node_modules ] && ! pgrep -f "yarn dev" >/dev/null 2>&1; then
-  echo "Pre-warming dev server (yarn dev → :8005, background)..."
-  (
-    cd /workspace/dashboard || exit 0
-    if [ -f /workspace/.env ]; then set -a; . /workspace/.env; set +a; fi
-    nohup yarn dev > /workspace/yarn-dev.log 2>&1 &
-    disown
-  ) || echo "dev-server pre-warm failed to launch (non-fatal)"
-fi
-
 # Marker for anything polling for init completion (agent auto-fix, etc.)
 touch /workspace/.init-done
 echo "init.sh complete"
