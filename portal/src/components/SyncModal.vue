@@ -1,11 +1,13 @@
 <script setup lang="ts">
-// Sync the shared definitions repo (pipelines + skills) with a git remote.
-// Push/Pull are always available; a pull that conflicts swaps in resolve actions
-// (use remote / use local / abort). Auth uses the mounted GitHub token server-side
-// — only the non-secret remote URL + branch are configured here.
+// Sync the definitions repo with a git remote, per directory. Each pipeline and
+// skill is a selectable item with its own status (in sync / local-only /
+// remote-only / local-ahead / remote-ahead / conflict). Select items, then Push
+// (local → remote) or Pull (remote → local). There's no content merge — an op
+// overwrites the whole directory in that direction; "Force" overwrites even when
+// the other side also changed (a conflict) or is ahead.
 import { ref, computed, onMounted } from 'vue'
 import { api } from '@/services/api'
-import type { SyncStatus } from '@/services/api'
+import type { SyncStatus, SyncItemStatus } from '@/services/api'
 import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 import FormField from './primitives/FormField.vue'
@@ -14,16 +16,31 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 
 const status = ref<SyncStatus | null>(null)
 const loading = ref(true)
-const busy = ref('')          // which action is in flight ('' = none)
+const busy = ref('')
 const error = ref('')
 const message = ref('')
+const force = ref(false)
+const selected = ref<Set<string>>(new Set())
 
-// Remote config form
 const editing = ref(false)
 const urlInput = ref('')
 const branchInput = ref('')
 
-const conflicted = computed(() => !!status.value?.conflicted)
+const items = computed(() => status.value?.items ?? [])
+const selectablePaths = computed(() => items.value.filter(i => i.status !== 'in-sync').map(i => i.path))
+const allSelected = computed(() => selectablePaths.value.length > 0 && selectablePaths.value.every(p => selected.value.has(p)))
+const hasConflictSelected = computed(() =>
+  items.value.some(i => selected.value.has(i.path) && (i.status === 'conflict' || i.status === 'local-ahead' || i.status === 'remote-ahead')),
+)
+
+const STATUS_LABEL: Record<SyncItemStatus, string> = {
+  'in-sync': 'in sync',
+  'local-only': 'local only',
+  'remote-only': 'remote only',
+  'local-ahead': 'local ahead',
+  'remote-ahead': 'remote ahead',
+  'conflict': 'conflict',
+}
 
 async function refresh() {
   loading.value = true; error.value = ''
@@ -32,6 +49,7 @@ async function refresh() {
     if (!status.value.configured) editing.value = true
     urlInput.value = status.value.url || ''
     branchInput.value = status.value.branch || 'main'
+    selected.value = new Set()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load sync status'
   } finally {
@@ -40,11 +58,27 @@ async function refresh() {
 }
 onMounted(refresh)
 
-async function run(action: string, fn: () => Promise<unknown>) {
-  if (busy.value) return
+function toggle(path: string) {
+  const s = new Set(selected.value)
+  s.has(path) ? s.delete(path) : s.add(path)
+  selected.value = s
+}
+function toggleAll() {
+  selected.value = allSelected.value ? new Set() : new Set(selectablePaths.value)
+}
+
+async function run(action: 'push' | 'pull') {
+  if (busy.value || !selected.value.size) return
   busy.value = action; error.value = ''; message.value = ''
   try {
-    await fn()
+    const paths = [...selected.value]
+    const r = action === 'push' ? await api.syncPush(paths, force.value) : await api.syncPull(paths, force.value)
+    const parts: string[] = []
+    if (r.done.length) parts.push(`${action === 'push' ? 'Pushed' : 'Pulled'} ${r.done.length}`)
+    if (r.skipped.length) parts.push(`skipped ${r.skipped.length} (${r.skipped[0].reason}${r.skipped.length > 1 ? ', …' : ''})`)
+    message.value = parts.join(' · ') || 'Nothing to do.'
+    status.value = await api.getSyncStatus()
+    selected.value = new Set()
   } catch (e) {
     error.value = e instanceof Error ? e.message : `${action} failed`
   } finally {
@@ -52,34 +86,23 @@ async function run(action: string, fn: () => Promise<unknown>) {
   }
 }
 
-const saveRemote = () => run('save', async () => {
-  status.value = await api.setSyncRemote(urlInput.value, branchInput.value)
-  editing.value = false
-  message.value = status.value.configured ? 'Remote saved.' : 'Remote cleared.'
-})
-
-const push = () => run('push', async () => {
-  const r = await api.syncPush()
-  message.value = 'Pushed.' + (r.output ? ` ${r.output.split('\n').pop()}` : '')
-  status.value = await api.getSyncStatus()
-})
-
-const pull = () => run('pull', async () => {
-  const r = await api.syncPull()
-  if (r.conflicted) message.value = `Pulled with conflicts in ${r.files.length} file(s) — resolve below.`
-  else message.value = r.output || 'Pulled.'
-  status.value = await api.getSyncStatus()
-})
-
-const resolve = (strategy: 'theirs' | 'ours' | 'abort') => run('resolve', async () => {
-  await api.syncResolve(strategy)
-  message.value = strategy === 'abort' ? 'Merge aborted.' : `Resolved (${strategy === 'theirs' ? 'kept remote' : 'kept local'}).`
-  status.value = await api.getSyncStatus()
-})
+const saveRemote = async () => {
+  if (busy.value) return
+  busy.value = 'save'; error.value = ''; message.value = ''
+  try {
+    status.value = await api.setSyncRemote(urlInput.value, branchInput.value)
+    editing.value = false
+    message.value = status.value.configured ? 'Remote saved.' : 'Remote cleared.'
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to save remote'
+  } finally {
+    busy.value = ''
+  }
+}
 </script>
 
 <template>
-  <Modal title="Sync definitions" subtitle="pipelines + skills · one git repo" @close="!busy && emit('close')">
+  <Modal title="Sync definitions" subtitle="select pipelines & skills to push or pull" @close="!busy && emit('close')">
     <div class="sync-body">
       <div v-if="loading" class="sync-muted">Loading…</div>
 
@@ -94,50 +117,48 @@ const resolve = (strategy: 'theirs' | 'ours' | 'abort') => run('resolve', async 
           </FormField>
           <div class="sync-form-actions">
             <Button v-if="status.configured" variant="secondary" :disabled="!!busy" @click="editing = false">Cancel</Button>
-            <Button variant="primary" :disabled="busy === 'save'" @click="saveRemote">
-              {{ busy === 'save' ? 'Saving…' : 'Save remote' }}
-            </Button>
+            <Button variant="primary" :disabled="busy === 'save'" @click="saveRemote">{{ busy === 'save' ? 'Saving…' : 'Save remote' }}</Button>
           </div>
         </div>
 
-        <!-- Status + actions -->
         <template v-else>
           <div class="sync-remote-row">
             <div class="sync-remote-info">
               <div class="sync-url">{{ status.url }}</div>
-              <div class="sync-meta">
-                branch <code>{{ status.branch }}</code>
-                <span v-if="status.remoteExists" class="sync-counts">
-                  · <span :class="{ hot: status.ahead }">↑{{ status.ahead }}</span>
-                  <span :class="{ hot: status.behind }">↓{{ status.behind }}</span>
-                </span>
-                <span v-else class="sync-muted"> · remote branch not created yet</span>
-              </div>
+              <div class="sync-meta">branch <code>{{ status.branch }}</code><span v-if="!status.remoteExists" class="sync-muted"> · remote branch not created yet</span></div>
             </div>
             <button class="sync-edit" :disabled="!!busy" @click="editing = true">Edit</button>
           </div>
 
           <div v-if="!status.hasToken" class="sync-warn">No GitHub token found in the container — push/pull will fail until one is mounted.</div>
           <div v-if="status.fetchError" class="sync-warn">Fetch: {{ status.fetchError }}</div>
-          <div v-if="status.dirty && !conflicted" class="sync-warn">Working tree has uncommitted changes.</div>
 
-          <!-- Conflict resolution (only after a conflicted pull) -->
-          <div v-if="conflicted" class="sync-conflict">
-            <div class="sync-conflict-title">⚠ Merge conflicts in {{ status.conflictedFiles.length }} file(s)</div>
-            <ul class="sync-conflict-files"><li v-for="f in status.conflictedFiles" :key="f">{{ f }}</li></ul>
-            <div class="sync-conflict-actions">
-              <Button variant="secondary" :disabled="!!busy" @click="resolve('theirs')">Use remote</Button>
-              <Button variant="secondary" :disabled="!!busy" @click="resolve('ours')">Use local</Button>
-              <Button variant="danger" :disabled="!!busy" @click="resolve('abort')">Abort merge</Button>
-            </div>
+          <!-- Item list -->
+          <div class="sync-list">
+            <label class="sync-row sync-head">
+              <input type="checkbox" :checked="allSelected" :disabled="!selectablePaths.length" @change="toggleAll" />
+              <span class="sync-name">{{ selected.size }} selected</span>
+              <span class="sync-kind"></span>
+              <span class="sync-status"></span>
+            </label>
+            <label v-for="it in items" :key="it.path" class="sync-row" :class="{ insync: it.status === 'in-sync' }">
+              <input type="checkbox" :checked="selected.has(it.path)" :disabled="it.status === 'in-sync'" @change="toggle(it.path)" />
+              <span class="sync-name">{{ it.id }}</span>
+              <span class="sync-kind">{{ it.kind }}</span>
+              <span class="sync-status" :class="'st-' + it.status">{{ STATUS_LABEL[it.status] }}</span>
+            </label>
+            <div v-if="!items.length" class="sync-muted sync-empty">No pipelines or skills.</div>
           </div>
 
-          <div v-else class="sync-actions">
-            <Button variant="secondary" :disabled="!!busy" @click="pull">{{ busy === 'pull' ? 'Pulling…' : '↓ Pull' }}</Button>
-            <Button variant="primary" :disabled="!!busy" @click="push">{{ busy === 'push' ? 'Pushing…' : '↑ Push' }}</Button>
-          </div>
+          <label class="sync-force" :class="{ active: hasConflictSelected }">
+            <input type="checkbox" v-model="force" />
+            Force — overwrite the other side for conflicting / ahead items
+          </label>
 
-          <div class="sync-last">last commit: <code>{{ status.lastCommit || '—' }}</code></div>
+          <div class="sync-actions">
+            <Button variant="secondary" :disabled="!!busy || !selected.size" @click="run('pull')">{{ busy === 'pull' ? 'Pulling…' : `↓ Pull selected` }}</Button>
+            <Button variant="primary" :disabled="!!busy || !selected.size" @click="run('push')">{{ busy === 'push' ? 'Pushing…' : `↑ Push selected` }}</Button>
+          </div>
         </template>
       </template>
 
@@ -165,11 +186,9 @@ const resolve = (strategy: 'theirs' | 'ours' | 'abort') => run('resolve', async 
 .sync-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 .sync-remote-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.sync-remote-info { min-width: 0; }
 .sync-url { color: var(--color-text-primary); font-family: 'SF Mono', Menlo, monospace; font-size: 12.5px; word-break: break-all; }
 .sync-meta { color: var(--color-text-muted); margin-top: 4px; }
 .sync-meta code { color: var(--color-text-hover); }
-.sync-counts .hot { color: var(--color-accent); font-weight: 600; }
 .sync-edit {
   flex-shrink: 0; padding: 4px 10px; font-size: 12px; cursor: pointer;
   background: transparent; color: var(--color-text-muted);
@@ -177,18 +196,35 @@ const resolve = (strategy: 'theirs' | 'ours' | 'abort') => run('resolve', async 
 }
 .sync-edit:hover:not(:disabled) { color: var(--color-text-primary); }
 
-.sync-actions { display: flex; gap: 8px; }
-
 .sync-warn { padding: 8px 12px; font-size: 12px; color: var(--color-warning); background: rgba(232, 128, 96, 0.1); border-radius: 6px; }
 
-.sync-conflict { padding: 10px 12px; background: rgba(232, 88, 88, 0.08); border: 1px solid var(--color-error); border-radius: 6px; }
-.sync-conflict-title { color: var(--color-error); font-weight: 600; margin-bottom: 6px; }
-.sync-conflict-files { margin: 0 0 10px; padding-left: 18px; color: var(--color-text-hover); font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
-.sync-conflict-files li { margin: 2px 0; }
-.sync-conflict-actions { display: flex; gap: 8px; }
+.sync-list {
+  border: 1px solid var(--color-border-medium); border-radius: 8px; overflow: hidden;
+  max-height: 320px; overflow-y: auto;
+}
+.sync-row {
+  display: grid; grid-template-columns: 20px 1fr auto auto; align-items: center; gap: 10px;
+  padding: 7px 12px; border-bottom: 1px solid var(--color-border-dark); cursor: pointer;
+}
+.sync-row:last-child { border-bottom: none; }
+.sync-row.insync { cursor: default; opacity: 0.65; }
+.sync-head { background: var(--color-bg-element); cursor: default; position: sticky; top: 0; }
+.sync-head .sync-name { color: var(--color-text-muted); font-size: 12px; }
+.sync-name { color: var(--color-text-primary); font-family: 'SF Mono', Menlo, monospace; font-size: 12.5px; }
+.sync-kind { color: var(--color-text-muted); font-size: 11px; }
+.sync-status { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.st-in-sync { color: var(--color-text-muted); }
+.st-local-only, .st-local-ahead { color: var(--color-accent); background: rgba(176, 104, 160, 0.14); }
+.st-remote-only, .st-remote-ahead { color: var(--color-status-running); background: rgba(91, 168, 160, 0.14); }
+.st-conflict { color: var(--color-error); background: rgba(232, 88, 88, 0.12); }
 
-.sync-last { color: var(--color-text-muted); font-size: 12px; }
-.sync-last code { color: var(--color-text-hover); }
+.sync-empty { padding: 16px; text-align: center; }
+
+.sync-force { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-text-muted); cursor: pointer; }
+.sync-force.active { color: var(--color-warning); }
+
+.sync-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 .sync-msg { padding: 8px 12px; font-size: 12px; color: var(--color-status-running); background: rgba(91, 168, 160, 0.1); border-radius: 6px; }
 .sync-error { padding: 8px 12px; font-size: 12px; color: var(--color-error); background: rgba(232, 88, 88, 0.08); border-radius: 6px; }
 </style>

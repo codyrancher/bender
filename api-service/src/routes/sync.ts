@@ -2,10 +2,10 @@
 // with a git remote. Thin adapters over services/definitionsSync.
 import { Express } from 'express';
 import { asyncHandler } from '../utils/http';
-import { syncStatus, setSyncRemote, syncPush, syncPull, syncResolve } from '../services/definitionsSync';
+import { syncStatus, setSyncRemote, pushItems, pullItems } from '../services/definitionsSync';
 
 export function registerSyncRoutes(app: Express): void {
-  // Current sync state (remote, branch, ahead/behind, conflicts). Fetches on call.
+  // Current sync state: remote/branch + per-item (pipeline/skill dir) status.
   app.get('/api/definitions/sync/status', asyncHandler((_req, res) =>
     res.json(syncStatus())));
 
@@ -13,14 +13,11 @@ export function registerSyncRoutes(app: Express): void {
   app.put('/api/definitions/sync/remote', asyncHandler((req, res) =>
     res.json(setSyncRemote(req.body?.url ?? '', req.body?.branch ?? ''))));
 
-  app.post('/api/definitions/sync/push', asyncHandler((_req, res) =>
-    res.json(syncPush())));
+  // Push selected dirs (local → remote). body: { paths: string[], force?: boolean }.
+  app.post('/api/definitions/sync/push', asyncHandler((req, res) =>
+    res.json(pushItems(Array.isArray(req.body?.paths) ? req.body.paths : [], !!req.body?.force))));
 
-  app.post('/api/definitions/sync/pull', asyncHandler((_req, res) =>
-    res.json(syncPull())));
-
-  // Resolve a conflicted pull: strategy = theirs (favor remote) | ours (favor
-  // local) | abort.
-  app.post('/api/definitions/sync/resolve', asyncHandler((req, res) =>
-    res.json(syncResolve(req.body?.strategy))));
+  // Pull selected dirs (remote → local). body: { paths: string[], force?: boolean }.
+  app.post('/api/definitions/sync/pull', asyncHandler((req, res) =>
+    res.json(pullItems(Array.isArray(req.body?.paths) ? req.body.paths : [], !!req.body?.force))));
 }

@@ -14,25 +14,32 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const DEV_API_BASE = '/dev/api'
 
+export type SyncItemStatus =
+  | 'in-sync' | 'local-only' | 'remote-only' | 'local-ahead' | 'remote-ahead' | 'conflict'
+
+export interface SyncItem {
+  path: string
+  id: string
+  kind: 'pipeline' | 'skill'
+  status: SyncItemStatus
+}
+
 export interface SyncStatus {
   configured: boolean
   url?: string
   branch: string
   localBranch: string
-  dirty: boolean
-  conflicted: boolean
-  conflictedFiles: string[]
-  ahead: number
-  behind: number
-  remoteExists: boolean
-  lastCommit: string
   hasToken: boolean
+  remoteExists: boolean
   fetchError?: string
+  items: SyncItem[]
 }
 
-export type SyncPullResult =
-  | { ok: true; conflicted: false; output: string }
-  | { ok: false; conflicted: true; files: string[] }
+export interface SyncOpResult {
+  ok: true
+  done: string[]
+  skipped: Array<{ path: string; reason: string }>
+}
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options)
@@ -422,19 +429,21 @@ export const api = {
     })
   },
 
-  async syncPush(): Promise<{ ok: true; output: string }> {
-    return fetchJSON(`${API_BASE}/definitions/sync/push`, { method: 'POST' })
-  },
-
-  async syncPull(): Promise<SyncPullResult> {
-    return fetchJSON(`${API_BASE}/definitions/sync/pull`, { method: 'POST' })
-  },
-
-  async syncResolve(strategy: 'theirs' | 'ours' | 'abort'): Promise<{ ok: true; strategy: string }> {
-    return fetchJSON(`${API_BASE}/definitions/sync/resolve`, {
+  // Push selected dirs (local → remote). force overwrites on conflict/remote-ahead.
+  async syncPush(paths: string[], force = false): Promise<SyncOpResult> {
+    return fetchJSON(`${API_BASE}/definitions/sync/push`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ strategy }),
+      body: JSON.stringify({ paths, force }),
+    })
+  },
+
+  // Pull selected dirs (remote → local). force overwrites on conflict/local-ahead.
+  async syncPull(paths: string[], force = false): Promise<SyncOpResult> {
+    return fetchJSON(`${API_BASE}/definitions/sync/pull`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths, force }),
     })
   },
 }
