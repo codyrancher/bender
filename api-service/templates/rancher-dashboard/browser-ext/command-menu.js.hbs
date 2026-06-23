@@ -7,14 +7,6 @@ const COMMANDS = [
     description: 'Single-node RKE2 cluster on EC2 (c5d.xlarge, us-west-2, Canal)',
     execute: createEc2Cluster,
   },
-  {
-    id: 'create-appco-repo',
-    icon: '\ud83d\udce6',
-    label: 'Create AppCo Chart Repository',
-    description: 'Add OCI chart repository for oci://dp.apps.rancher.io/charts',
-    execute: createAppCoRepo,
-    show: function() { return window.location.pathname.includes('/explorer'); },
-  },
 ];
 
 // --- API helper ---
@@ -120,66 +112,6 @@ async function createEc2Cluster(setStatus) {
   });
 
   setStatus('success', 'Cluster "' + clusterName + '" creation initiated!');
-}
-
-// --- Cluster helpers ---
-
-function getClusterFromUrl() {
-  var match = window.location.pathname.match(/\/c\/([^/]+)\//);
-  return match ? match[1] : 'local';
-}
-
-function clusterApiPrefix(clusterId) {
-  return clusterId === 'local' ? '' : '/k8s/clusters/' + clusterId;
-}
-
-// --- AppCo chart repository creation ---
-
-async function createAppCoRepo(setStatus) {
-  var email = '{{{appcoEmail}}}';
-  var token = '{{{appcoToken}}}';
-
-  if (!email || !token) {
-    throw new Error('AppCo email and token not configured. Set them in portal settings.');
-  }
-
-  var clusterId = getClusterFromUrl();
-  var apiPrefix = clusterApiPrefix(clusterId);
-  var secretName = 'appco-auth';
-  var repoName = 'appco';
-  var secretNs = 'cattle-system';
-
-  // 1. Create auth secret
-  setStatus('pending', 'Creating AppCo auth secret...');
-  await rancherApi('POST', apiPrefix + '/v1/secrets', {
-    type: 'kubernetes.io/basic-auth',
-    metadata: {
-      name: secretName,
-      namespace: secretNs,
-    },
-    data: {
-      username: btoa(email),
-      password: btoa(token),
-    },
-  });
-
-  // 2. Create OCI chart repository
-  setStatus('pending', 'Creating AppCo chart repository...');
-  await rancherApi('POST', apiPrefix + '/v1/catalog.cattle.io.clusterrepos', {
-    type: 'catalog.cattle.io.clusterrepo',
-    metadata: {
-      name: repoName,
-    },
-    spec: {
-      url: 'oci://dp.apps.rancher.io/charts',
-      clientSecret: {
-        name: secretName,
-        namespace: secretNs,
-      },
-    },
-  });
-
-  setStatus('success', 'AppCo chart repository created!');
 }
 
 // --- Menu UI ---

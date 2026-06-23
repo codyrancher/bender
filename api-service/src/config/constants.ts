@@ -51,9 +51,6 @@ export const KEY_DEFAULTS: Record<string, string> = {
 // Configurable keys are sourced from environment variables (see .env.example)
 // rather than a settings UI. Maps the template/settings key id → env var name.
 export const ENV_KEY_MAP: Record<string, string> = {
-  figmaApiKey: 'FIGMA_API_KEY',
-  appcoEmail: 'APPCO_EMAIL',
-  appcoToken: 'APPCO_TOKEN',
   rancherTag: 'RANCHER_TAG',
 };
 
@@ -62,9 +59,6 @@ export const ENV_KEY_MAP: Record<string, string> = {
 // them straight from the environment.
 export const CONTAINER_CRED_ENV = [
   'ANTHROPIC_API_KEY', // authenticates the Claude CLI that executes pipeline stages
-  'FIGMA_API_KEY',
-  'APPCO_EMAIL',
-  'APPCO_TOKEN',
   'AWS_ACCESS_KEY_ID',
   'AWS_SECRET_ACCESS_KEY',
   'AWS_DEFAULT_REGION',

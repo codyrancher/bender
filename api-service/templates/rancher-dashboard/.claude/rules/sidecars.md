@@ -1,4 +1,4 @@
-# Sidecars (Rancher, Browser, Figma)
+# Sidecars (Rancher, Browser)
 
 Your project's sidecar containers may not be running yet — the harness can create projects without them to keep batch creation cheap. When you need one (to reproduce an issue, test a fix, drive the browser), start them and wait until they're actually reachable:
 

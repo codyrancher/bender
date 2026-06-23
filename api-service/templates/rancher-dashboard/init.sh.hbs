@@ -92,27 +92,6 @@ else
 echo "No GitHub token available - push will not work."
 fi
 
-# Configure Figma MCP server for Claude Code
-# The VSCode extension reads MCP config from .claude.json project entries,
-# not from settings.local.json or .vscode/mcp.json
-rm -f ~/.claude/mcp-needs-auth-cache.json
-if [ -f ~/.claude.json ]; then
-  python3 -c "
-import json, sys
-url = sys.argv[2]
-with open(sys.argv[1]) as f: data = json.load(f)
-for proj in data.get('projects', {}).values():
-    proj.get('mcpServers', {}).pop('figma', None)
-for path in ['/workspace', '/workspace/dashboard']:
-    if path in data.get('projects', {}):
-        data['projects'][path].setdefault('mcpServers', {})['figma'] = {
-            'type': 'http',
-            'url': url
-        }
-with open(sys.argv[1], 'w') as f: json.dump(data, f, indent=2)
-" ~/.claude.json "http://{{projectName}}-figma:8000/mcp" 2>/dev/null
-fi
-
 # Sidecar-dependent setup (socat to rancher, setup-rancher.sh) lives in
 # on-sidecars-up.sh and runs whenever sidecars come up — see template docs.
 

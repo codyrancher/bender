@@ -154,7 +154,7 @@ function readGitConfig(): { gitName: string; gitEmail: string; githubToken: stri
 
 export function getTemplateVars(projectName: string, _settingsKeys?: Record<string, string>): Record<string, string> {
   const git = readGitConfig();
-  // NOTE: credentials (GitHub token, AppCo, Figma, cloud keys) are intentionally
+  // NOTE: credentials (GitHub token, cloud keys) are intentionally
   // NOT returned here. They are routed into the container as environment variables
   // (see credentialEnvArgs in routes.ts) so secrets are never written into the
   // scaffolded workspace files. Only non-secret identity values are templated.

@@ -2,8 +2,6 @@
   "name": "Rancher Dashboard",
   "description": "Rancher dev environment",
   "keys": [
-    { "id": "appcoEmail", "label": "AppCo Email", "description": "Email address for AppCo OCI registry authentication", "isText": true, "placeholder": "user@example.com" },
-    { "id": "appcoToken", "label": "AppCo Access Token", "description": "Access token for AppCo OCI registry authentication" },
     { "id": "rancherTag", "label": "Rancher Tag", "description": "Default Rancher image tag (e.g. head, v2.10-head)", "isText": true, "placeholder": "head" }
   ],
   "sidecars": [

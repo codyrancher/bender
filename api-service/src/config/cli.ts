@@ -117,7 +117,7 @@ Notes:
 
 ## Starting sidecars when the user is ready to work
 
-Sidecars (rancher, browser, figma) are started separately so batch project creation stays cheap:
+Sidecars (rancher, browser) are started separately so batch project creation stays cheap:
 
 \`\`\`bash
 curl -s -X POST \$BENDER_API/sidecars/start/<project>

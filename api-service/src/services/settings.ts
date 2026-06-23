@@ -33,7 +33,7 @@ export function writeSettings(settings: Settings): void {
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
 }
 
-// Configurable keys sourced from environment variables (FIGMA_API_KEY, etc.).
+// Configurable keys sourced from environment variables (RANCHER_TAG, etc.).
 export function envKeys(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [keyId, envName] of Object.entries(ENV_KEY_MAP)) {

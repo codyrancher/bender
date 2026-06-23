@@ -449,9 +449,6 @@ fi
 # Pull socat image for port forwarding (if not cached)
 docker image inspect alpine/socat >/dev/null 2>&1 || docker pull alpine/socat
 
-# Pull figma MCP server image (if not cached)
-docker image inspect acuvity/mcp-server-figma >/dev/null 2>&1 || docker pull acuvity/mcp-server-figma
-
 # Sync templates to persistent volume (always, to pick up updates)
 echo "Syncing templates to /data/templates..."
 mkdir -p /data/templates
@@ -509,9 +506,6 @@ docker run -d \
     -e GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID}" \
     -e GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET}" \
     -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-    -e FIGMA_API_KEY="${FIGMA_API_KEY}" \
-    -e APPCO_EMAIL="${APPCO_EMAIL}" \
-    -e APPCO_TOKEN="${APPCO_TOKEN}" \
     -e RANCHER_TAG="${RANCHER_TAG}" \
     -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
     -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \

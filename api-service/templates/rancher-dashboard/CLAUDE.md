@@ -25,8 +25,8 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{rancherTag}}` | Rancher tag (if specified during project creation) |
 | `{{rancherPublicUrl}}` | Public URL for rancher (auto-generated for rancher templates) |
 
-> **Credentials are NOT template variables.** Secrets (GitHub token, AppCo,
-> Figma, AWS/DigitalOcean cloud keys) are injected into the container as
+> **Credentials are NOT template variables.** Secrets (GitHub token,
+> AWS/DigitalOcean cloud keys) are injected into the container as
 > **environment variables** and must never be written into scaffolded files.
 > Reference them in shell at runtime, e.g. `$GITHUB_TOKEN`, `$AWS_ACCESS_KEY_ID`,
 > `$DIGITALOCEAN_ACCESS_TOKEN`. They come from the host `.env` (see `.env.example`).

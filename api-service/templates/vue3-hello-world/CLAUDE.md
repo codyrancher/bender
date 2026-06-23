@@ -22,8 +22,6 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{gitName}}` | User's git name from gitconfig |
 | `{{gitEmail}}` | User's git email from gitconfig |
 | `{{githubToken}}` | GitHub OAuth token from gh CLI config |
-| `{{appcoEmail}}` | AppCo email from harness settings |
-| `{{appcoToken}}` | AppCo access token from harness settings |
 | `{{nodeVersion}}` | Node version (if specified during project creation) |
 | `{{rancherTag}}` | Rancher tag (if specified during project creation) |
 | `{{rancherPublicUrl}}` | Public URL for rancher (auto-generated for rancher templates) |
