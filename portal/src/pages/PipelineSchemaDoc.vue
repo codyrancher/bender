@@ -3,10 +3,6 @@
 // "pipeline.yaml schema" button in the definition editor. Static documentation —
 // keep it in sync with utils/pipelineParser.ts (parsePipelineSpec / resolveGraph
 // / validatePipeline) on the backend.
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
-
 const example = `name: Rancher Issue Fix & Demo
 description: Reproduce a rancher/dashboard issue, demonstrate it, fix it, then open a PR.
 
@@ -49,7 +45,6 @@ stages:
   <div class="schema-page">
     <header class="schema-header">
       <h1>pipeline.yaml schema</h1>
-      <button class="schema-back" @click="router.back()">← Back</button>
     </header>
 
     <div class="schema-body">
@@ -150,11 +145,6 @@ stages:
   flex-shrink: 0;
 }
 .schema-header h1 { font-size: 18px; font-weight: 600; color: var(--color-text-primary); margin: 0; }
-.schema-back {
-  padding: 6px 14px; border-radius: 6px; border: 1px solid var(--color-border-medium);
-  background: transparent; color: var(--color-text-muted); font-size: 13px; font-family: inherit; cursor: pointer;
-}
-.schema-back:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
 
 .schema-body {
   overflow-y: auto;
