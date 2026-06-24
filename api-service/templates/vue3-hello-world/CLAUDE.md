@@ -19,8 +19,8 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{projectName}}` | The project name chosen by the user |
 | `{{adminPassword}}` | Auto-generated secure password |
 | `{{userPassword1}}` through `{{userPassword3}}` | Additional auto-generated passwords |
-| `{{gitName}}` | User's git name from gitconfig |
-| `{{gitEmail}}` | User's git email from gitconfig |
+| `{{gitName}}` | Commit author name (from `GIT_USER_NAME`) |
+| `{{gitEmail}}` | Commit author email (from `GIT_USER_EMAIL`) |
 | `{{nodeVersion}}` | Node version (if specified during project creation) |
 | `{{rancherTag}}` | Rancher tag (if specified during project creation) |
 

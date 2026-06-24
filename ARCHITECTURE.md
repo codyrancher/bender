@@ -65,15 +65,14 @@ containers.
 |------|-----------|---------|
 | `bender-dind` (named volume) | `/var/lib/docker` | The inner Docker daemon's storage (images/layers/containers), persisted across restarts. |
 | `${BENDER_DIR:-~/bender}` | `/data` | **All bender state** — `pipelines/` (per-instance workspaces), `credentials/` (Claude login), `config/` (the definitions git repo), `cli/`, `browser-profile/`, plus runtime state like `rancher-data/`. |
-| `~/.gitconfig` (read-only) | `/data/gitconfig` | Commit identity (name/email) for pipelines — sourced from your real host gitconfig. |
 | `./api-service/templates` | `/data/templates` | Workspace templates — bind-mounted from the repo, so edits are live without an image rebuild. |
 | `/dev/snd` | `/dev/snd` | Host audio device (also exposed via `devices:`). |
 
-`gitconfig` and `templates` are overlay mounts that come from **outside**
-`~/bender` (your host gitconfig and the repo working tree), so they layer on top
-of the single `/data` mount as nested bind-mounts. The named `bender-dind` volume
-is declared in the top-level `volumes:` block; everything else is a host
-bind-mount.
+`templates` is an overlay mount from **outside** `~/bender` (the repo working
+tree), layered on top of the single `/data` mount as a nested bind-mount. The
+named `bender-dind` volume is declared in the top-level `volumes:` block;
+everything else is a host bind-mount. (The pipeline commit identity comes from
+the `GIT_USER_NAME` / `GIT_USER_EMAIL` env vars, not a mounted gitconfig.)
 
 ## Images
 

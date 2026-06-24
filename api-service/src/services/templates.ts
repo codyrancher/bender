@@ -132,18 +132,13 @@ function generatePassword(length: number = 15): string {
   return all.join('');
 }
 
+// The commit identity used inside pipelines, supplied via the environment
+// (see .env.example) rather than a mounted host gitconfig.
 function readGitConfig(): { gitName: string; gitEmail: string } {
-  const result = { gitName: '', gitEmail: '' };
-
-  try {
-    const gitconfig = fs.readFileSync('/data/gitconfig', 'utf-8');
-    const name = gitconfig.match(/name\s*=\s*(.+)/);
-    const email = gitconfig.match(/email\s*=\s*(.+)/);
-    if (name) result.gitName = name[1].trim();
-    if (email) result.gitEmail = email[1].trim();
-  } catch { /* gitconfig not available */ }
-
-  return result;
+  return {
+    gitName: (process.env.GIT_USER_NAME || '').trim(),
+    gitEmail: (process.env.GIT_USER_EMAIL || '').trim(),
+  };
 }
 
 export function getTemplateVars(projectName: string, _settingsKeys?: Record<string, string>): Record<string, string> {

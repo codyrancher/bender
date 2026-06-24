@@ -16,9 +16,8 @@ services:
       # All bender state lives under ~/bender (override the base with BENDER_DIR):
       # pipelines/, credentials/, config/, cli/, browser-profile/, etc.
       - ${BENDER_DIR:-~/bender}:/data
-      # Overlays sourced from outside ~/bender (layered on top of /data):
-      - ~/.gitconfig:/data/gitconfig:ro          # host commit identity (read-only)
-      - ./api-service/templates:/data/templates  # repo templates — live in dev
+      # Repo templates, layered on top of /data so edits are live in dev:
+      - ./api-service/templates:/data/templates
       - /dev/snd:/dev/snd
     devices:
       - /dev/snd:/dev/snd

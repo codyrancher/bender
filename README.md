@@ -15,16 +15,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together.
   (Docker-in-Docker).
 - A **GitHub classic PAT** with `public_repo` scope — used by git + `gh` inside
   pipelines (clone, push, open/comment on PRs). See [.env.example](.env.example).
-- Host **`~/.gitconfig`** with `user.name` / `user.email` — bind-mounted and used
-  as the commit identity inside pipelines.
+- **`GIT_USER_NAME` / `GIT_USER_EMAIL`** in `.env` — the commit identity used
+  inside pipelines (the PAT is auth only).
 
 ## First-time setup
 
 ```bash
 cp .env.example .env
 # Edit .env:
-#   PUID / PGID   -> `id -u` / `id -g`
-#   GITHUB_TOKEN  -> your classic PAT (public_repo)
+#   PUID / PGID                  -> `id -u` / `id -g`
+#   GITHUB_TOKEN                 -> your classic PAT (public_repo)
+#   GIT_USER_NAME / _EMAIL       -> commit identity for pipelines
 #   (AWS_* / DIGITALOCEAN_* are optional, left commented)
 
 docker compose up -d --build
