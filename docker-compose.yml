@@ -12,12 +12,24 @@ services:
       - "4444:443"
       - "6007:6006"
     volumes:
-      - bender-dind:/var/lib/docker
-      # All bender state lives under ~/bender (override the base with BENDER_DIR):
-      # pipelines/, credentials/, config/, cli/, browser-profile/, etc.
+      # 1. Persistent bender state — the single data volume. Everything the app
+      #    creates lives here: pipelines/, credentials/, config/ (definitions
+      #    repo), cli/, browser-profile/, rancher-data/, … Override the host base
+      #    dir with BENDER_DIR (defaults to ~/bender).
       - ${BENDER_DIR:-~/bender}:/data
-      # Repo templates, layered on top of /data so edits are live in dev:
+
+      # 2. Inner Docker engine storage (images/layers/containers). A named volume
+      #    on purpose — DinD wants a real docker-managed volume, not a host
+      #    bind-mount (overlay2 misbehaves on bind-mounts and it's large/churny).
+      - bender-dind:/var/lib/docker
+
+      # 3. Dev overlay: the repo's templates, layered on top of /data so template
+      #    edits are live without an image rebuild. (Remove this and templates
+      #    come from the baked image instead.)
       - ./api-service/templates:/data/templates
+
+      # 4. Host audio device passthrough (browser/recording sound) — a device,
+      #    not data. Paired with the `devices:` entry below.
       - /dev/snd:/dev/snd
     devices:
       - /dev/snd:/dev/snd
