@@ -13,7 +13,7 @@ args:
   - name: RANCHER_TAG
     description: Rancher image tag for the sidecar.
     default: head
-    options: [head, v2.14-head, v2.13-head, v2.12-head, v2.11-head, v2.10-head]
+    options: [head, v2.15-head, v2.14-head, v2.13-head, v2.12-head, v2.11-head, v2.10-head]
 
 stages:
   - name: Reproduce Issue
