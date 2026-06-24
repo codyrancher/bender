@@ -51,14 +51,7 @@ export interface SyncStatus {
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 function githubToken(): string {
-  const env = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-  if (env) return env.trim();
-  try {
-    const y = fs.readFileSync('/data/gh-config/hosts.yml', 'utf-8');
-    const m = y.match(/oauth_token:\s*(\S+)/);
-    if (m) return m[1].trim();
-  } catch { /* no gh config */ }
-  return '';
+  return (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
 }
 
 // git for network ops (fetch/push): inline credential helper fed by the token

@@ -132,8 +132,8 @@ function generatePassword(length: number = 15): string {
   return all.join('');
 }
 
-function readGitConfig(): { gitName: string; gitEmail: string; githubToken: string } {
-  const result = { gitName: '', gitEmail: '', githubToken: '' };
+function readGitConfig(): { gitName: string; gitEmail: string } {
+  const result = { gitName: '', gitEmail: '' };
 
   try {
     const gitconfig = fs.readFileSync('/data/gitconfig', 'utf-8');
@@ -142,12 +142,6 @@ function readGitConfig(): { gitName: string; gitEmail: string; githubToken: stri
     if (name) result.gitName = name[1].trim();
     if (email) result.gitEmail = email[1].trim();
   } catch { /* gitconfig not available */ }
-
-  try {
-    const hostsYml = fs.readFileSync('/data/gh-config/hosts.yml', 'utf-8');
-    const token = hostsYml.match(/oauth_token:\s*(\S+)/);
-    if (token) result.githubToken = token[1].trim();
-  } catch { /* gh config not available */ }
 
   return result;
 }

@@ -21,9 +21,13 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{userPassword1}}` through `{{userPassword3}}` | Additional auto-generated passwords |
 | `{{gitName}}` | User's git name from gitconfig |
 | `{{gitEmail}}` | User's git email from gitconfig |
-| `{{githubToken}}` | GitHub OAuth token from gh CLI config |
 | `{{nodeVersion}}` | Node version (if specified during project creation) |
 | `{{rancherTag}}` | Rancher tag (if specified during project creation) |
+
+> **Credentials are NOT template variables.** The GitHub token is injected into
+> the container as an **environment variable** (`$GITHUB_TOKEN` / `$GH_TOKEN`) and
+> must never be written into scaffolded files. Reference it in shell at runtime.
+> It comes from the host `.env` (see `.env.example`).
 
 ### Metadata files (not copied to projects)
 These files configure the template itself and are NOT scaffolded:

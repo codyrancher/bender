@@ -17,7 +17,6 @@ services:
       - ${BENDER_DIR:-~/bender}/.credentials:/data/credentials
       - ${BENDER_DIR:-~/bender}/.config:/data/config
       - ${BENDER_DIR:-~/bender}/.cli:/data/cli
-      - ~/.config/gh:/data/gh-config:ro
       - ~/.gitconfig:/data/gitconfig:ro
       - ./api-service/templates:/data/templates
       - ${BENDER_DIR:-~/bender}/.browser-profile:/data/browser-profile

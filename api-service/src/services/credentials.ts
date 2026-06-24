@@ -1,18 +1,11 @@
 // Credential plumbing: reads the GitHub token and builds the `-e KEY=value`
 // docker args that forward credentials into pipeline containers.
-import fs from 'fs';
 import { CONTAINER_CRED_ENV } from '../config/constants';
 
-// The GitHub token comes from the env if set, otherwise the mounted gh config.
+// The GitHub token is a PAT supplied via the environment (GITHUB_TOKEN/GH_TOKEN);
+// see .env.example for the required scopes.
 export function readGithubToken(): string {
-  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN;
-  if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
-  try {
-    const hostsYml = fs.readFileSync('/data/gh-config/hosts.yml', 'utf-8');
-    const m = hostsYml.match(/oauth_token:\s*(\S+)/);
-    if (m) return m[1].trim();
-  } catch { /* gh config not available */ }
-  return '';
+  return (process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
 }
 
 // Build `-e KEY=value` docker args for every credential present in the env.

@@ -435,8 +435,7 @@ docker run -d \
     -v /data/templates:/app/templates \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e V4L2_DEVICE="${V4L2_DEV}" \
-    -e GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID}" \
-    -e GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET}" \
+    -e GITHUB_TOKEN="${GITHUB_TOKEN}" \
     -e RANCHER_TAG="${RANCHER_TAG}" \
     -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
     -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
