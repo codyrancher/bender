@@ -54,15 +54,27 @@ bender/
   `src/router/` — routes. `src/stores/` — Pinia state; `src/services/` — the API
   client; `src/composables/`, `src/utils/`, `src/types/`, `src/assets/`.
 
-## Data
+## Volumes
 
-`/data` inside the container is bind-mounted from `~/bender` on the host
-(override with `BENDER_DIR`):
+Configured on the `bender` service in [docker-compose.yml](docker-compose.yml).
+State lives under `~/bender` on the host (override the base dir with the
+`BENDER_DIR` env var); the inner containers receive the relevant `/data/*`
+subpaths from `setup.sh`.
 
-- `pipelines/` — per-pipeline workspaces (each holds `.bender.json`, `pipeline.yaml`, skills)
-- `.credentials/` — Claude login, persisted across restarts
-- `.config/` — the consolidated **definitions** git repo (`pipelines/<id>/`, `skills/<id>/`)
-- `.cli/`, `.browser-profile/`
+| Host | Container | Purpose |
+|------|-----------|---------|
+| `bender-dind` (named volume) | `/var/lib/docker` | The inner Docker daemon's storage (images/layers/containers), persisted across restarts. |
+| `${BENDER_DIR:-~/bender}/pipelines` | `/data/pipelines` | Per-pipeline workspaces (each holds `.bender.json`, `pipeline.yaml`, skills). |
+| `${BENDER_DIR:-~/bender}/.credentials` | `/data/credentials` | Claude login, persisted across restarts. |
+| `${BENDER_DIR:-~/bender}/.config` | `/data/config` | The consolidated **definitions** git repo (`pipelines/<id>/`, `skills/<id>/`). |
+| `${BENDER_DIR:-~/bender}/.cli` | `/data/cli` | Global Claude CLI workspace/state. |
+| `${BENDER_DIR:-~/bender}/.browser-profile` | `/data/browser-profile` | Persistent browser profile. |
+| `~/.gitconfig` (read-only) | `/data/gitconfig` | Commit identity (name/email) for pipelines. |
+| `./api-service/templates` | `/data/templates` | Workspace templates — bind-mounted, so edits are live without an image rebuild. |
+| `/dev/snd` | `/dev/snd` | Host audio device (also exposed via `devices:`). |
+
+The named `bender-dind` volume is declared in the top-level `volumes:` block;
+everything else is a host bind-mount.
 
 ## Images
 
