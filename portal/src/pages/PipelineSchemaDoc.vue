@@ -10,6 +10,10 @@ args:
   - name: ISSUE_URL
     required: true
     description: URL of the GitHub issue to target.
+  - name: RANCHER_TAG
+    description: Rancher image tag for the sidecar.
+    default: head
+    options: [head, v2.14-head, v2.13-head, v2.12-head, v2.11-head, v2.10-head]
 
 stages:
   - name: Reproduce Issue
@@ -75,7 +79,8 @@ stages:
             <tr><td><code>name</code></td><td>string</td><td><strong>yes</strong></td><td>Env-var-style identifier, e.g. <code>ISSUE_URL</code>.</td></tr>
             <tr><td><code>required</code></td><td>boolean</td><td>no</td><td>If true, a run can't start until it's provided. Default <code>false</code>.</td></tr>
             <tr><td><code>description</code></td><td>string</td><td>no</td><td>Hint shown next to the input field.</td></tr>
-            <tr><td><code>default</code></td><td>string</td><td>no</td><td>Pre-filled value.</td></tr>
+            <tr><td><code>default</code></td><td>string</td><td>no</td><td>Pre-filled value in the New Pipeline dialog.</td></tr>
+            <tr><td><code>options</code></td><td>list</td><td>no</td><td>Suggested values. When present the field becomes a dropdown of these — but a custom value can still be typed.</td></tr>
           </tbody>
         </table>
       </section>

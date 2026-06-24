@@ -7,7 +7,6 @@ import { usePipelineId } from '@/composables/route'
 import TabBar from '@/components/TabBar.vue'
 import Toast from '@/components/Toast.vue'
 import DropOverlay from '@/components/DropOverlay.vue'
-import NewPipelineModal from '@/components/NewPipelineModal.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
 import ClaudeCliPage from '@/components/ClaudeCliPage.vue'
 
@@ -45,7 +44,6 @@ onMounted(async () => {
   <TabBar v-if="!route.meta.bare" />
   <Toast />
   <DropOverlay />
-  <NewPipelineModal />
   <DeletePipelineModal />
 </template>
 

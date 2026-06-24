@@ -76,6 +76,10 @@ export function startSidecars(pipeline: string, sidecars?: SidecarDef[]): void {
         const env = envKeys();
         for (const [k, v] of Object.entries(sidecar.env)) {
           let value = v.replace(/\{\{projectName\}\}/g, project);
+          // {{args.NAME}} — per-instance pipeline args (from the create dialog).
+          value = value.replace(/\{\{args\.(\w+)\}\}/g, (_match: string, key: string) => {
+            return meta?.args?.[key] || KEY_DEFAULTS[key] || '';
+          });
           value = value.replace(/\{\{settings\.(\w+)\}\}/g, (_match: string, key: string) => {
             return env[key] || tplKeys?.[key] || settings.keys?.[key] || KEY_DEFAULTS[key] || '';
           });
@@ -98,13 +102,19 @@ export function startSidecars(pipeline: string, sidecars?: SidecarDef[]): void {
         args.push('-e', 'RANCHER_VERSION_TYPE=prime');
         args.push('-e', 'CATTLE_BASE_UI_BRAND=suse');
       }
-      // Interpolate {{settings.*}} in image field — per-project vars override template keys override global settings
+      // Interpolate the image field. {{args.NAME}} pulls from the instance's
+      // pipeline args (the create-dialog values); {{settings.*}} is the legacy
+      // per-project/template-key path. Both fall back to KEY_DEFAULTS.
       const projectMeta = readBenderJson(pipeline);
       const imgTplKeys = projectMeta?.template ? settings.templateKeys?.[projectMeta.template] : undefined;
       const imgEnv = envKeys();
-      let image = sidecar.image.replace(/\{\{settings\.(\w+)\}\}/g, (_match: string, key: string) => {
-        return projectMeta?.vars?.[key] || imgEnv[key] || imgTplKeys?.[key] || settings.keys?.[key] || KEY_DEFAULTS[key] || '';
-      });
+      let image = sidecar.image
+        .replace(/\{\{args\.(\w+)\}\}/g, (_match: string, key: string) => {
+          return projectMeta?.args?.[key] || KEY_DEFAULTS[key] || '';
+        })
+        .replace(/\{\{settings\.(\w+)\}\}/g, (_match: string, key: string) => {
+          return projectMeta?.vars?.[key] || imgEnv[key] || imgTplKeys?.[key] || settings.keys?.[key] || KEY_DEFAULTS[key] || '';
+        });
       args.push(image);
       if (sidecar.command) {
         args.push(...sidecar.command);

@@ -5,8 +5,6 @@ import type { Toast } from '@/types'
 let toastId = 0
 
 export const useUiStore = defineStore('ui', () => {
-  const showNewPipelineModal = ref(false)
-  const newPipelineTemplateId = ref<string | null>(null)
   const deletePipelineName = ref<string | null>(null)
   const isLoading = ref(true)
   const loadingMessage = ref('Loading pipelines...')
@@ -42,16 +40,6 @@ export const useUiStore = defineStore('ui', () => {
     }, duration)
   }
 
-  function openNewPipelineModal(templateId?: string) {
-    newPipelineTemplateId.value = templateId || null
-    showNewPipelineModal.value = true
-  }
-
-  function closeNewPipelineModal() {
-    showNewPipelineModal.value = false
-    newPipelineTemplateId.value = null
-  }
-
   function openDeletePipelineModal(pipelineName: string) {
     deletePipelineName.value = pipelineName
   }
@@ -75,8 +63,6 @@ export const useUiStore = defineStore('ui', () => {
   return {
     terminalOpen,
     toggleTerminal,
-    showNewPipelineModal,
-    newPipelineTemplateId,
     deletePipelineName,
     isLoading,
     loadingMessage,
@@ -86,8 +72,6 @@ export const useUiStore = defineStore('ui', () => {
     showLoading,
     hideLoading,
     showToast,
-    openNewPipelineModal,
-    closeNewPipelineModal,
     openDeletePipelineModal,
     closeDeletePipelineModal,
     setDragging,

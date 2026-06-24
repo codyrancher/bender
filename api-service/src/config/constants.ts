@@ -38,16 +38,16 @@ export const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS) || 35 * 60 
 // its exact starting state. Disabled with SNAPSHOT_STAGES=0.
 export const SNAPSHOT_STAGES = process.env.SNAPSHOT_STAGES !== '0';
 
-// Default values for settings keys (used when a key is empty/unset).
+// Fallback values for sidecar interpolation tokens ({{args.NAME}} /
+// {{settings.NAME}}) when the instance didn't supply one.
 export const KEY_DEFAULTS: Record<string, string> = {
-  rancherTag: 'head',
+  RANCHER_TAG: 'head',
 };
 
-// Configurable keys are sourced from environment variables (see .env.example)
-// rather than a settings UI. Maps the template/settings key id → env var name.
-export const ENV_KEY_MAP: Record<string, string> = {
-  rancherTag: 'RANCHER_TAG',
-};
+// Configurable keys sourced from environment variables (see .env.example),
+// mapping the settings key id → env var name. (Empty: RANCHER_TAG is now a
+// per-pipeline arg, not an env-sourced template key.)
+export const ENV_KEY_MAP: Record<string, string> = {};
 
 // Credentials forwarded into project containers as environment variables. They
 // are NEVER written into scaffolded files — tooling inside the container reads

@@ -7,6 +7,7 @@ import { api } from '@/services/api'
 import type { PipelineArg } from '@/types'
 import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
+import SearchCombobox from './primitives/SearchCombobox.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>()
@@ -104,7 +105,15 @@ async function handleCreate() {
             <span v-if="a.required" class="arg-required">required</span>
           </div>
           <p v-if="a.description" class="arg-desc">{{ a.description }}</p>
+          <SearchCombobox
+            v-if="a.options && a.options.length"
+            v-model="argValues[a.name]"
+            :options="a.options"
+            :placeholder="a.default || a.name"
+            @submit="handleCreate"
+          />
           <input
+            v-else
             v-model="argValues[a.name]"
             type="text"
             :placeholder="a.default || a.name"

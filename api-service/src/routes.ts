@@ -190,7 +190,6 @@ export function registerRoutes(app: Express): void {
 
       const projectVars: Record<string, string> = {};
       if (vars.adminPassword) projectVars.adminPassword = vars.adminPassword;
-      if (requestVars.rancherTag) projectVars.rancherTag = requestVars.rancherTag;
       if (requestVars.nodeVersion) projectVars.nodeVersion = requestVars.nodeVersion;
 
       // Declared pipeline args (passed into the container as env vars above) —

@@ -16,6 +16,9 @@ export interface PipelineArg {
   description: string
   required: boolean
   default: string
+  /** When non-empty, the arg renders as a taggable dropdown of these values
+   *  (a custom value can still be typed). */
+  options?: string[]
 }
 
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled'

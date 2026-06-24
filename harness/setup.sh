@@ -436,7 +436,6 @@ docker run -d \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
     -e V4L2_DEVICE="${V4L2_DEV}" \
     -e GITHUB_TOKEN="${GITHUB_TOKEN}" \
-    -e RANCHER_TAG="${RANCHER_TAG}" \
     -e AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" \
     -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
     -e AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}" \

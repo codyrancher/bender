@@ -17,7 +17,7 @@ export interface PipelineStage {
   next: number[];
 }
 
-export interface PipelineArg { name: string; description: string; required: boolean; default: string }
+export interface PipelineArg { name: string; description: string; required: boolean; default: string; options: string[] }
 
 export interface PipelineSpec {
   name?: string;
@@ -53,6 +53,9 @@ export function parsePipelineSpec(text: string): PipelineSpec {
       description: String(a?.description ?? '').trim(),
       required: !!a?.required,
       default: a?.default != null ? String(a.default) : '',
+      options: Array.isArray(a?.options)
+        ? a.options.map((o: any) => String(o).trim()).filter(Boolean)
+        : [],
     }))
     .filter((a: PipelineArg) => a.name);
 

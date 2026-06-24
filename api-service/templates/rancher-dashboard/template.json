@@ -1,13 +1,10 @@
 {
   "name": "Rancher Dashboard",
   "description": "Rancher dev environment",
-  "keys": [
-    { "id": "rancherTag", "label": "Rancher Tag", "description": "Default Rancher image tag (e.g. head, v2.10-head)", "isText": true, "placeholder": "head" }
-  ],
   "sidecars": [
     {
       "suffix": "rancher",
-      "image": "rancher/rancher:{{settings.rancherTag}}",
+      "image": "rancher/rancher:{{args.RANCHER_TAG}}",
       "env": {
         "CATTLE_BOOTSTRAP_PASSWORD": "{{harness.adminPassword}}"
       },
