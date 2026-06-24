@@ -15,7 +15,6 @@ import { HttpError } from '../utils/http';
 import { listSkillDefinitions, getSkillDefinition } from './skillDefinitions';
 import { getTemplateClaudeMd } from './templates';
 import { parsePipelineSpec, validatePipeline, markdownToYaml } from '../utils/pipelineParser';
-import { bundledDir } from '../config/constants';
 import { PIPELINES_DIR, repoGit, commitAll, ensureDefinitionsRepo } from './definitionsRepo';
 
 // Template whose CLAUDE.md seeds a new definition's CLAUDE.md by default (every
@@ -26,8 +25,6 @@ const DEFAULT_CLAUDE_TEMPLATE = 'rancher-dashboard';
 // definitions repo (see definitionsRepo.ts). git runs with cwd here so history/
 // diff pathspecs scope to this subdir; commits go through commitAll (repo-wide).
 const DEFINITIONS_DIR = PIPELINES_DIR;
-// Baked-in defaults — used by the CLAUDE.md backfill (seeding lives in the repo module).
-const SEED_DIR = bundledDir('pipeline-definitions');
 
 const git = (args: string[]) => repoGit(args, DEFINITIONS_DIR);
 const gitCommit = (message: string) => commitAll(message);
@@ -278,27 +275,4 @@ export function migrateDefinitionsToYaml(): void {
     }
   }
   if (changed) gitCommit('Migrate definitions from pipeline.md to pipeline.yaml');
-}
-
-// Backfill the companion CLAUDE.md for definitions that predate it. The seed
-// only copies `<id>.CLAUDE.md` during the one-time repo init (ensureRepo), so a
-// repo created before that file existed has a definition folder with only
-// pipeline.yaml — its CLAUDE.md never surfaces. For each existing definition
-// missing a CLAUDE.md where a baked seed companion exists, copy it in. Only acts
-// when the file is absent, so it won't clobber edits (and runs once thereafter).
-export function backfillMissingClaudeMd(): void {
-  ensureRepo();
-  let changed = false;
-  for (const entry of fs.readdirSync(DEFINITIONS_DIR, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name === '.git') continue;
-    const dir = path.join(DEFINITIONS_DIR, entry.name);
-    if (!fs.existsSync(path.join(dir, 'pipeline.yaml'))) continue;
-    const claudePath = path.join(dir, 'CLAUDE.md');
-    if (fs.existsSync(claudePath)) continue;
-    const seed = path.join(SEED_DIR, `${entry.name}.CLAUDE.md`);
-    if (!fs.existsSync(seed)) continue;
-    fs.copyFileSync(seed, claudePath);
-    changed = true;
-  }
-  if (changed) gitCommit('Backfill CLAUDE.md from seeds for existing definitions');
 }

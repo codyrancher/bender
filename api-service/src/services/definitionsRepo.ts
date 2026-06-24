@@ -16,7 +16,7 @@
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { DATA_DIR, bundledDir } from '../config/constants';
+import { DATA_DIR } from '../config/constants';
 
 const CONFIG_DIR = path.join(DATA_DIR, 'config');
 export const REPO_DIR = path.join(CONFIG_DIR, 'definitions');
@@ -43,40 +43,6 @@ export function commitAll(message: string): string {
   repoGit(['add', '-A']);
   repoGit(['-c', `user.name=${GIT_NAME}`, '-c', `user.email=${GIT_EMAIL}`, 'commit', '-m', message, '--allow-empty']);
   return repoGit(['rev-parse', 'HEAD']).stdout.trim();
-}
-
-function copyDir(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
-  }
-}
-
-// Seed pipeline definitions from the baked-in flat *.pipeline.yaml defaults into
-// folder-per-definition (with the optional companion <id>.CLAUDE.md).
-function seedPipelines(dir: string): void {
-  const seed = bundledDir('pipeline-definitions');
-  if (!fs.existsSync(seed)) return;
-  for (const f of fs.readdirSync(seed).filter(x => x.endsWith('.pipeline.yaml'))) {
-    const id = f.replace('.pipeline.yaml', '');
-    const out = path.join(dir, id);
-    fs.mkdirSync(out, { recursive: true });
-    fs.copyFileSync(path.join(seed, f), path.join(out, 'pipeline.yaml'));
-    const claudeSeed = path.join(seed, `${id}.CLAUDE.md`);
-    if (fs.existsSync(claudeSeed)) fs.copyFileSync(claudeSeed, path.join(out, 'CLAUDE.md'));
-  }
-}
-
-// Seed skill definitions from the baked-in folder-per-skill defaults.
-function seedSkills(dir: string): void {
-  const seed = bundledDir('skill-definitions');
-  if (!fs.existsSync(seed)) return;
-  for (const entry of fs.readdirSync(seed, { withFileTypes: true })) {
-    if (entry.isDirectory()) copyDir(path.join(seed, entry.name), path.join(dir, entry.name));
-  }
 }
 
 // True if a legacy repo dir holds real content (definition folders), not just a
@@ -110,14 +76,12 @@ export function ensureDefinitionsRepo(): void {
     repoGit(['config', 'user.name', GIT_NAME]);
     repoGit(['config', 'user.email', GIT_EMAIL]);
 
-    // Migrate the two legacy repos in if present, else seed from baked defaults.
+    // Migrate the two legacy repos in if present. A fresh install starts empty —
+    // definitions/skills are created in-app or pulled from a remote, not seeded.
     if (hasContent(OLD_PIPELINES_DIR)) migrateChildren(OLD_PIPELINES_DIR, PIPELINES_DIR);
-    else seedPipelines(PIPELINES_DIR);
-
     if (hasContent(OLD_SKILLS_DIR)) migrateChildren(OLD_SKILLS_DIR, SKILLS_DIR);
-    else seedSkills(SKILLS_DIR);
 
-    commitAll('Consolidate pipeline + skill definitions into one repo');
+    commitAll('Initialize definitions repo');
   }
   ready = true;
 }

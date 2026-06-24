@@ -2,7 +2,7 @@
 // Side-by-side comparison screenshot of two pages (before/after).
 //
 // Usage:
-//   node .claude/skills/rancher-browser-automate/compare.mjs [options]
+//   node /workspace/.claude/skills/my-browser-screenshot-comparison/my-browser-screenshot-comparison.mjs [options]
 //
 // Options:
 //   --before-url URL         Full URL for the "before" screenshot

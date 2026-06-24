@@ -4,16 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { PIPELINES_DIR } from '../config/constants';
 import { markdownToYaml } from '../utils/pipelineParser';
-import { migrateDefinitionsToYaml, backfillMissingClaudeMd } from './definitions';
+import { migrateDefinitionsToYaml } from './definitions';
 
 export function migratePipelineMdToYaml(): void {
   // The git-backed definitions repo (commits the conversion).
   try { migrateDefinitionsToYaml(); }
   catch (err) { console.error('definition pipeline.md→yaml migration failed:', err); }
-
-  // Restore companion CLAUDE.md for definitions seeded before it existed.
-  try { backfillMissingClaudeMd(); }
-  catch (err) { console.error('CLAUDE.md backfill failed:', err); }
 
   // Each pipeline instance's workspace.
   try {
