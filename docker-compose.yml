@@ -27,12 +27,6 @@ services:
       #    edits are live without an image rebuild. (Remove this and templates
       #    come from the baked image instead.)
       - ./api-service/templates:/data/templates
-
-      # 4. Host audio device passthrough (browser/recording sound) — a device,
-      #    not data. Paired with the `devices:` entry below.
-      - /dev/snd:/dev/snd
-    devices:
-      - /dev/snd:/dev/snd
     restart: unless-stopped
 
 volumes:

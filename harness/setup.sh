@@ -156,22 +156,11 @@ cat > /etc/chromium/policies/managed/policies.json <<'JSON'
   "ExtensionInstallForcelist": [
     "nngceckbapebfimnlniiiahkandclblb;https://clients2.google.com/service/update2/crx"
   ],
-  "AudioCaptureAllowed": true,
   "VideoCaptureAllowed": true,
-  "AudioCaptureAllowedUrls": ["https://*"],
   "VideoCaptureAllowedUrls": ["https://*"]
 }
 JSON
 rm -f /etc/chromium/policies/managed/extensions.json
-
-# Virtual microphone
-PULSE_DEFAULT=/etc/pulse/default.pa
-if [ -f "$PULSE_DEFAULT" ] && ! grep -q 'bender_mic' "$PULSE_DEFAULT"; then
-  cat >> "$PULSE_DEFAULT" <<'PULSE'
-load-module module-null-source source_name=bender_mic
-set-default-source bender_mic
-PULSE
-fi
 
 # Webcam relay: wrap chromium binary with LD_PRELOAD hook and D-Bus session
 CHROMIUM=/usr/lib/chromium/chromium
@@ -331,9 +320,8 @@ chown -R 1000:1000 "$BROWSER_PROFILE"
 if ! docker ps -q -f name=bender-browser | grep -q .; then
     echo "Starting persistent browser sidecar..."
     docker rm -f bender-browser 2>/dev/null || true
-    # Build device flags for audio/video passthrough
+    # Build device flags for webcam (V4L2) passthrough
     DEVICE_FLAGS=""
-    [ -d /dev/snd ] && DEVICE_FLAGS="$DEVICE_FLAGS --device /dev/snd:/dev/snd"
     [ -n "$V4L2_DEV" ] && [ -e "$V4L2_DEV" ] && DEVICE_FLAGS="$DEVICE_FLAGS --device $V4L2_DEV:$V4L2_DEV"
 
     docker run -d \
