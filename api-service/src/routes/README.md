@@ -14,4 +14,3 @@ shape the response. Registered from `app.ts`.
 | `skill-definitions.ts` | Global skill-definition endpoints (CRUD + history/diff) — thin handlers over `services/skillDefinitions`. |
 | `insights.ts` | Insights DB browser endpoints — thin handlers over `services/insights`. |
 | `pty.ts` | The `/api/cli/*` endpoints (uploads, CLAUDE.md) — thin handlers over `services/cli`. (The PTY websocket itself is attached from `server.ts` via `services/cli`.) |
-| `harness.ts` | Dev-harness endpoints — status (JSON) + start/rebuild/promote/abandon, which stream `services/harness` progress as SSE. |

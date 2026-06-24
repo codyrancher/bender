@@ -3,14 +3,12 @@ import type {
   StatusResponse,
   CreatePipelineResponse,
   UploadResponse,
-  HarnessStatus,
   PipelineRun,
   PipelineStage,
   PipelineArg,
 } from '@/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-const DEV_API_BASE = '/dev/api'
 
 export type SyncItemStatus =
   | 'in-sync' | 'local-only' | 'remote-only' | 'local-ahead' | 'remote-ahead' | 'conflict'
@@ -246,48 +244,6 @@ export const api = {
 
   skillDefinitionCommitUrl(id: string, sha: string): string {
     return `${API_BASE}/skill-definitions/${id}/commit/${sha}`
-  },
-
-  // Harness dev environment
-  async getHarnessStatus(): Promise<HarnessStatus> {
-    return fetchJSON<HarnessStatus>(`${API_BASE}/harness/status`)
-  },
-
-  async harnessStream(
-    action: 'start' | 'rebuild' | 'promote' | 'abandon',
-    onLog: (message: string) => void,
-  ): Promise<void> {
-    const base = action === 'start' ? API_BASE : DEV_API_BASE
-    const response = await fetch(`${base}/harness/${action}`, { method: 'POST' })
-    if (!response.body) {
-      throw new Error(`Harness ${action} failed with status ${response.status}`)
-    }
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        try {
-          const event = JSON.parse(line.slice(6))
-          if (event.type === 'log') {
-            onLog(event.message)
-          } else if (event.type === 'error') {
-            throw new Error(event.message)
-          }
-        } catch (e) {
-          if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e
-        }
-      }
-    }
   },
 
   // Insights

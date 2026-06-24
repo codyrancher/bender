@@ -4,7 +4,6 @@ import PipelinesPage from '@/pages/PipelinesPage.vue'
 import VscodePage from '@/pages/VscodePage.vue'
 import BrowserPage from '@/pages/BrowserPage.vue'
 import SplitPage from '@/pages/SplitPage.vue'
-import HarnessPage from '@/pages/HarnessPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
 import DefinitionsBrowser from '@/pages/DefinitionsBrowser.vue'
 import PipelineSchemaDoc from '@/pages/PipelineSchemaDoc.vue'
@@ -36,12 +35,6 @@ const router = createRouter({
       name: 'split',
       component: SplitPage,
       meta: { view: 'split' as ViewMode },
-    },
-    {
-      path: '/harness/vscode',
-      name: 'harness',
-      component: HarnessPage,
-      meta: { view: 'vscode' as ViewMode, harness: true },
     },
     {
       path: '/settings',

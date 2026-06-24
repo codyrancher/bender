@@ -75,13 +75,6 @@ export interface Pipeline {
   stages?: PipelineStage[]
 }
 
-export interface HarnessStatus {
-  devRunning: boolean
-  devContainerStatus: string
-  devApiStatus: string
-  sourceExists: boolean
-}
-
 export type ViewMode = 'vscode' | 'browser' | 'split'
 
 export interface Toast {

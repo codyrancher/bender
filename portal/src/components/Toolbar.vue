@@ -2,9 +2,8 @@
 import { computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
-import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
+import { usePipelineId, useViewMode } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
-import HarnessToolbar from './HarnessToolbar.vue'
 import ExternalLinkIcon from '@/assets/icons/external-link.svg?component'
 import SplitIcon from '@/assets/icons/split.svg?component'
 import RefreshIcon from '@/assets/icons/refresh.svg?component'
@@ -15,7 +14,6 @@ import SpinnerIcon from '@/assets/icons/spinner.svg?component'
 const router = useRouter()
 const pipelinesStore = usePipelinesStore()
 
-const isHarness = useIsHarness()
 const pipelineId = usePipelineId()
 const viewMode = useViewMode()
 const isSplit = computed(() => viewMode.value === 'split')
@@ -62,61 +60,57 @@ function toggleSplit() {
 
 <template>
   <div class="toolbar">
-    <HarnessToolbar v-if="isHarness" />
-
-    <template v-else>
-      <div class="tabs">
-        <div v-if="pipelineId" class="tab-wrapper" :class="{ active: viewMode === 'vscode' || viewMode === 'split' }">
-          <RouterLink class="tab-link" :to="`/${pipelineId}/vscode`">
-            VSCode
-          </RouterLink>
-          <button class="tab-external" title="Open in new tab" @click="openVscodeNewTab">
-            <ExternalLinkIcon />
-          </button>
-        </div>
-        <div v-if="pipelineId && browserPort" class="tab-wrapper" :class="{ active: viewMode === 'browser' || viewMode === 'split' }">
-          <RouterLink class="tab-link" :to="`/${pipelineId}/browser`">
-            Browser
-          </RouterLink>
-          <button class="tab-external" title="Open in new tab" @click="openBrowserNewTab">
-            <ExternalLinkIcon />
-          </button>
-        </div>
-      </div>
-      <div class="toolbar-buttons">
-        <button
-          v-if="pipelineId && browserPort"
-          class="toolbar-btn icon-btn"
-          :class="{ active: isSplit }"
-          title="Split view"
-          @click="toggleSplit"
-        >
-          <SplitIcon />
-        </button>
-        <button
-          v-if="pipelineId && isRunning"
-          class="toolbar-btn icon-btn"
-          title="Reprovision sidecars"
-          @click="handleReprovision"
-        >
-          <RefreshIcon />
-        </button>
-        <button
-          class="toolbar-btn icon-btn"
-          :class="{
-            running: isRunning && !isStopping,
-            busy: isBusy
-          }"
-          :disabled="!pipelineId || isBusy"
-          :title="isStarting ? 'Starting...' : isStopping ? 'Stopping...' : isRunning ? 'Stop container' : 'Start container'"
-          @click="handleToggleProject"
-        >
-          <SpinnerIcon v-if="isBusy" class="spinner" />
-          <StopIcon v-else-if="isRunning" />
-          <PlayIcon v-else />
+    <div class="tabs">
+      <div v-if="pipelineId" class="tab-wrapper" :class="{ active: viewMode === 'vscode' || viewMode === 'split' }">
+        <RouterLink class="tab-link" :to="`/${pipelineId}/vscode`">
+          VSCode
+        </RouterLink>
+        <button class="tab-external" title="Open in new tab" @click="openVscodeNewTab">
+          <ExternalLinkIcon />
         </button>
       </div>
-    </template>
+      <div v-if="pipelineId && browserPort" class="tab-wrapper" :class="{ active: viewMode === 'browser' || viewMode === 'split' }">
+        <RouterLink class="tab-link" :to="`/${pipelineId}/browser`">
+          Browser
+        </RouterLink>
+        <button class="tab-external" title="Open in new tab" @click="openBrowserNewTab">
+          <ExternalLinkIcon />
+        </button>
+      </div>
+    </div>
+    <div class="toolbar-buttons">
+      <button
+        v-if="pipelineId && browserPort"
+        class="toolbar-btn icon-btn"
+        :class="{ active: isSplit }"
+        title="Split view"
+        @click="toggleSplit"
+      >
+        <SplitIcon />
+      </button>
+      <button
+        v-if="pipelineId && isRunning"
+        class="toolbar-btn icon-btn"
+        title="Reprovision sidecars"
+        @click="handleReprovision"
+      >
+        <RefreshIcon />
+      </button>
+      <button
+        class="toolbar-btn icon-btn"
+        :class="{
+          running: isRunning && !isStopping,
+          busy: isBusy
+        }"
+        :disabled="!pipelineId || isBusy"
+        :title="isStarting ? 'Starting...' : isStopping ? 'Stopping...' : isRunning ? 'Stop container' : 'Start container'"
+        @click="handleToggleProject"
+      >
+        <SpinnerIcon v-if="isBusy" class="spinner" />
+        <StopIcon v-else-if="isRunning" />
+        <PlayIcon v-else />
+      </button>
+    </div>
   </div>
 </template>
 

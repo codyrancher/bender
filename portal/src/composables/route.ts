@@ -6,7 +6,7 @@ import type { ViewMode } from '@/types'
 // reach for useRoute() and the params/meta plumbing themselves. Each returns a
 // reactive computed that tracks route changes.
 
-/** The pipeline id from the current route, or null (home, settings, harness, …). */
+/** The pipeline id from the current route, or null (home, settings, …). */
 export function usePipelineId(): ComputedRef<string | null> {
   const route = useRoute()
   return computed(() => (route.params.pipelineId as string) || null)
@@ -16,10 +16,4 @@ export function usePipelineId(): ComputedRef<string | null> {
 export function useViewMode(): ComputedRef<ViewMode> {
   const route = useRoute()
   return computed(() => (route.meta.view as ViewMode) || 'vscode')
-}
-
-/** Whether the current route is the global harness (no pipeline). */
-export function useIsHarness(): ComputedRef<boolean> {
-  const route = useRoute()
-  return computed(() => route.meta.harness === true)
 }

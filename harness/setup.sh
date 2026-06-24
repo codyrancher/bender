@@ -51,59 +51,12 @@ if [ "$BUILD_ID_CHANGED" = "1" ] || ! docker image inspect bender-claude >/dev/n
     echo "Claude image built"
 fi
 
-# Invalidate promoted cache on build-id change
 if [ "$BUILD_ID_CHANGED" = "1" ]; then
-    echo "Clearing promoted cache"
-    rm -f /data/bender-src/.promoted
-    rm -rf /data/html-promoted
     echo "$IMAGE_BUILD_ID" > /data/.image-build-id
 fi
 
-# If promoted portal exists, use it; otherwise if promoted source exists, build from it
 API_SRC=/app/api-service
 PORTAL_HTML=/app/html
-
-# Find harness source root (may be in a subdirectory)
-find_harness_src() {
-    local base="$1"
-    if [ -d "$base/api-service" ]; then
-        echo "$base"
-    else
-        for d in "$base"/*/; do
-            if [ -d "${d}api-service" ]; then
-                echo "${d%/}"
-                return
-            fi
-        done
-        echo "$base"
-    fi
-}
-
-if [ -d /data/bender-src ] && [ -f /data/bender-src/.promoted ]; then
-    HARNESS_ROOT=$(find_harness_src /data/bender-src)
-    echo "Found promoted harness source at $HARNESS_ROOT"
-    API_SRC="$HARNESS_ROOT/api-service"
-
-    if [ -d /data/html-promoted ] && [ -f /data/html-promoted/index.html ]; then
-        PORTAL_HTML=/data/html-promoted
-        echo "Using pre-built promoted portal"
-    else
-        # Rebuild portal from promoted source
-        echo "Building portal from promoted source..."
-        mkdir -p /data/html-promoted
-        docker run --rm \
-            -v "$HARNESS_ROOT/portal":/build:ro \
-            -v /data/html-promoted:/out \
-            -w /build \
-            node:22-slim sh -c "cp -r /build/. /tmp/build && cd /tmp/build && npm ci && npx vite build && cp -r dist/. /out/"
-        if [ -f /data/html-promoted/index.html ]; then
-            PORTAL_HTML=/data/html-promoted
-            echo "Portal built from promoted source"
-        else
-            echo "WARN: Promoted portal build failed, using default"
-        fi
-    fi
-fi
 
 # Start or reload nginx container on the network
 if ! docker ps -q -f name=bender-nginx | grep -q .; then
@@ -481,9 +434,6 @@ docker run -d \
     -v /data:/data \
     -v /data/templates:/app/templates \
     -e DOCKER_HOST=unix:///var/run/docker.sock \
-    -e HARNESS_GIT_URL="${HARNESS_GIT_URL}" \
-    -e HARNESS_GIT_USER="${HARNESS_GIT_USER}" \
-    -e HARNESS_GIT_PASS="${HARNESS_GIT_PASS}" \
     -e V4L2_DEVICE="${V4L2_DEV}" \
     -e GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID}" \
     -e GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET}" \

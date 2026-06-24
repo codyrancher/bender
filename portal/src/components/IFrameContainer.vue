@@ -3,12 +3,11 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { usePipelineId, useViewMode, useIsHarness } from '@/composables/route'
+import { usePipelineId, useViewMode } from '@/composables/route'
 import { getBrowserUrl, getVscodeUrl } from '@/services/urls'
 import { pollUrl } from '@/utils/pollUrl'
 import Spinner from './primitives/Spinner.vue'
 import PlayIcon from '@/assets/icons/play.svg?component'
-import HarnessIframeView from './HarnessIframeView.vue'
 
 const router = useRouter()
 const pipelinesStore = usePipelinesStore()
@@ -16,7 +15,6 @@ const uiStore = useUiStore()
 
 const pipelineId = usePipelineId()
 const viewMode = useViewMode()
-const isHarness = useIsHarness()
 
 const noPipelines = computed(() => pipelinesStore.pipelines.length === 0)
 const isRunning = computed(() => pipelineId.value ? pipelinesStore.isPipelineRunning(pipelineId.value) : false)
@@ -170,15 +168,12 @@ window.addEventListener('message', handleVscodeOpenUrl)
 
 <template>
   <div class="iframe-container" :class="{ 'split-view': isSplit }">
-    <!-- Harness dev VS Code + its overlays (always mounted; shows on harness route) -->
-    <HarnessIframeView />
-
     <!-- Persistent pipeline iframes - stay mounted for all loaded+running pipelines -->
     <template v-for="pl in pipelinesStore.pipelines" :key="pl.name">
       <iframe
         v-if="pipelinesStore.isIframeLoaded(pl.name) && pipelinesStore.isPipelineRunning(pl.name) && isViewReady(pl.name, 'vscode')"
         :src="getVscodeSrc(pl.name)"
-        :class="{ active: !isHarness && isVscodeActive(pl.name), 'split-left': isSplit && isVscodeActive(pl.name) }"
+        :class="{ active: isVscodeActive(pl.name), 'split-left': isSplit && isVscodeActive(pl.name) }"
         allow="clipboard-read; clipboard-write; cross-origin-isolated"
         @load="onIframeLoad(pl.name, 'vscode')"
       ></iframe>
@@ -186,63 +181,61 @@ window.addEventListener('message', handleVscodeOpenUrl)
       <iframe
         v-if="shouldShowBrowser(pl.name, pl.browserPort)"
         :src="getEffectiveBrowserSrc(pl.name)"
-        :class="{ active: !isHarness && isBrowserActive(pl.name), 'split-right': isSplit && isBrowserActive(pl.name) }"
+        :class="{ active: isBrowserActive(pl.name), 'split-right': isSplit && isBrowserActive(pl.name) }"
         @load="onIframeLoad(pl.name, 'browser')"
       ></iframe>
     </template>
 
-    <!-- Overlays for the active pipeline (the harness has its own, above) -->
-    <template v-if="!isHarness">
-      <div v-if="uiStore.isLoading" class="loading-overlay">
-        {{ uiStore.loadingMessage }}
+    <!-- Overlays for the active pipeline -->
+    <div v-if="uiStore.isLoading" class="loading-overlay">
+      {{ uiStore.loadingMessage }}
+    </div>
+    <div v-else-if="noPipelines" class="loading-overlay">
+      No pipelines yet. Click "+ New" to create one.
+    </div>
+    <div v-else-if="isStopping" class="loading-overlay">
+      <div class="status-container">
+        <Spinner />
+        <span>Stopping {{ pipelineId }}...</span>
       </div>
-      <div v-else-if="noPipelines" class="loading-overlay">
-        No pipelines yet. Click "+ New" to create one.
+    </div>
+    <div v-else-if="isStarting" class="loading-overlay">
+      <div class="status-container">
+        <Spinner />
+        <span>Starting {{ pipelineId }}...</span>
       </div>
-      <div v-else-if="isStopping" class="loading-overlay">
+    </div>
+    <div v-else-if="pipelineId && !isRunning" class="loading-overlay">
+      <div class="not-running-container">
+        <span class="not-running-message">Container is not running</span>
+        <button class="start-btn" @click="handleStart">
+          <PlayIcon />
+          Start Container
+        </button>
+      </div>
+    </div>
+    <!-- VSCode/Browser loading spinners for active project -->
+    <template v-else-if="pipelineId">
+      <div
+        v-if="pipelineId && pipelinesStore.isIframeLoaded(pipelineId) && isRunning && isVscodeActive(pipelineId) && !isViewLoaded(pipelineId, 'vscode')"
+        class="loading-overlay"
+        :class="{ 'split-left': isSplit }"
+      >
         <div class="status-container">
           <Spinner />
-          <span>Stopping {{ pipelineId }}...</span>
+          <span>Loading VSCode...</span>
         </div>
       </div>
-      <div v-else-if="isStarting" class="loading-overlay">
+      <div
+        v-if="pipelineId && pipelinesStore.isIframeLoaded(pipelineId) && isRunning && isBrowserActive(pipelineId) && !isViewLoaded(pipelineId, 'browser')"
+        class="loading-overlay"
+        :class="{ 'split-right': isSplit }"
+      >
         <div class="status-container">
           <Spinner />
-          <span>Starting {{ pipelineId }}...</span>
+          <span>Loading Browser...</span>
         </div>
       </div>
-      <div v-else-if="pipelineId && !isRunning" class="loading-overlay">
-        <div class="not-running-container">
-          <span class="not-running-message">Container is not running</span>
-          <button class="start-btn" @click="handleStart">
-            <PlayIcon />
-            Start Container
-          </button>
-        </div>
-      </div>
-      <!-- VSCode/Browser loading spinners for active project -->
-      <template v-else-if="pipelineId">
-        <div
-          v-if="pipelineId && pipelinesStore.isIframeLoaded(pipelineId) && isRunning && isVscodeActive(pipelineId) && !isViewLoaded(pipelineId, 'vscode')"
-          class="loading-overlay"
-          :class="{ 'split-left': isSplit }"
-        >
-          <div class="status-container">
-            <Spinner />
-            <span>Loading VSCode...</span>
-          </div>
-        </div>
-        <div
-          v-if="pipelineId && pipelinesStore.isIframeLoaded(pipelineId) && isRunning && isBrowserActive(pipelineId) && !isViewLoaded(pipelineId, 'browser')"
-          class="loading-overlay"
-          :class="{ 'split-right': isSplit }"
-        >
-          <div class="status-container">
-            <Spinner />
-            <span>Loading Browser...</span>
-          </div>
-        </div>
-      </template>
     </template>
   </div>
 </template>

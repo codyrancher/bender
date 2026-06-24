@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Pipeline, HarnessStatus } from '@/types'
+import type { Pipeline } from '@/types'
 import { api } from '@/services/api'
 import { useUiStore } from './ui'
 
@@ -11,15 +11,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
   const stoppingPipelines = ref<Set<string>>(new Set())
 
   const isDraggingPipeline = ref(false)
-
-  const harnessStatus = ref<HarnessStatus>({
-    devRunning: false,
-    devContainerStatus: 'not_found',
-    devApiStatus: 'not_found',
-    sourceExists: false,
-  })
-  const harnessOperationActive = ref(false)
-  const harnessLogs = ref<string[]>([])
 
   let ws: WebSocket | null = null
 
@@ -210,37 +201,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     return loadedIframes.value.has(pipelineName)
   }
 
-  async function fetchHarnessStatus() {
-    try {
-      harnessStatus.value = await api.getHarnessStatus()
-    } catch (err) {
-      console.error('Failed to fetch harness status:', err)
-    }
-  }
-
-  async function harnessAction(action: 'start' | 'rebuild' | 'promote' | 'abandon') {
-    const ui = useUiStore()
-    harnessOperationActive.value = true
-    harnessLogs.value = []
-    try {
-      await api.harnessStream(action, (msg) => {
-        harnessLogs.value.push(msg)
-      })
-      await fetchHarnessStatus()
-      if (action === 'start') {
-        loadedIframes.value.add('bender-dev')
-      } else if (action === 'promote' || action === 'abandon') {
-        loadedIframes.value.delete('bender-dev')
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : `Harness ${action} failed`
-      ui.showToast(message, 'error')
-    } finally {
-      harnessOperationActive.value = false
-    }
-  }
-
-
   return {
     pipelines,
     currentPipeline,
@@ -261,11 +221,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     getPipelineBrowserHost,
     isPipelineDraggable,
     isDraggingPipeline,
-    harnessStatus,
-    harnessOperationActive,
-    harnessLogs,
-    fetchHarnessStatus,
-    harnessAction,
     connectEvents,
   }
 })
