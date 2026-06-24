@@ -22,6 +22,38 @@ host
     └── bender-<pipeline>-1 per-pipeline workspace + sidecars
 ```
 
+## Repository layout
+
+```
+bender/
+├── harness/              Outer DinD container: boots dockerd + the inner containers
+├── api-service/          The bender-api control plane (Express/TypeScript)
+├── portal/               The Vue 3 web UI
+├── docker-compose.yml    Local dev: the privileged `bender` service
+└── entrypoint.sh         User (PUID/PGID) + Claude credential setup for containers
+```
+
+**`harness/`** — everything that builds and boots the outer container.
+- `Dockerfile` — the DinD image (bakes the portal, copies `api-service/` in).
+- `setup.sh` — runs at startup: builds the `bender-api` image, starts nginx + API,
+  wires sidecars/devices.
+- `start-dockerd.sh`, `init-cgroup.sh`, `supervisord.conf` — bring up the inner
+  Docker daemon. `nginx.conf` — the reverse-proxy routing.
+
+**`api-service/`** — the API container.
+- `src/routes/` — HTTP/WS endpoint handlers (thin) → `src/services/`.
+- `src/services/` — the real logic: pipelines, run engine, definitions, sync,
+  sidecars, snapshots, insights, CLI, events.
+- `src/utils/` — shared helpers (the `pipeline.yaml` parser, http, exec, …).
+- `src/config/` — constants/config. `templates/` — workspace scaffolds (e.g.
+  `rancher-dashboard`) copied into each new pipeline. `pipeline-definitions/`,
+  `skill-definitions/` — seed definitions/skills bundled into the image.
+
+**`portal/`** — the Vue 3 SPA.
+- `src/components/` (+ `primitives/`) — UI; `src/pages/` — routed views;
+  `src/router/` — routes. `src/stores/` — Pinia state; `src/services/` — the API
+  client; `src/composables/`, `src/utils/`, `src/types/`, `src/assets/`.
+
 ## Data
 
 `/data` inside the container is bind-mounted from `~/bender` on the host
