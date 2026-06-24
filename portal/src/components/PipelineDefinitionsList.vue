@@ -12,7 +12,6 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'create', id: string): void
-  (e: 'import'): void
 }>()
 
 const newId = ref('')
@@ -41,7 +40,6 @@ function create() {
     <div class="defs-create">
       <input v-model="newId" placeholder="new-definition-id" @keydown.enter="create" />
       <button class="defs-create-btn" :disabled="creating || !newId.trim()" @click="create">+ Create</button>
-      <button class="defs-create-btn alt" title="Import a running pipeline's pipeline.md + skills as a definition" @click="emit('import')">↑ From pipeline</button>
     </div>
   </div>
 </template>
@@ -124,7 +122,4 @@ function create() {
 
 .defs-create-btn:hover:not(:disabled) { background: var(--color-accent); color: var(--color-text-bright); }
 .defs-create-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.defs-create-btn.alt { border-color: var(--color-border-medium); color: var(--color-text-muted); }
-.defs-create-btn.alt:hover:not(:disabled) { background: var(--color-bg-element); color: var(--color-text-hover); border-color: var(--color-text-muted); }
 </style>

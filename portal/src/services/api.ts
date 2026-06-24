@@ -197,14 +197,6 @@ export const api = {
     return `${API_BASE}/definitions/${id}/commit/${sha}`
   },
 
-  async pushPipelineDefinition(pipeline: string, definitionId: string, message: string): Promise<{ id: string; sha: string; skillCount: number }> {
-    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/push-definition`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ definitionId, message }),
-    })
-  },
-
   // Git-backed global skill definitions (a folder with SKILL.md + reference files)
   async getSkillDefinitions(): Promise<{ skills: Array<{ id: string; name: string; description: string; fileCount: number }> }> {
     return fetchJSON(`${API_BASE}/skill-definitions`)

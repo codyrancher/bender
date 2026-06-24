@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// The "Pipelines" tab of the definitions browser: the sidebar list, the selected
-// definition's detail (editor + history), and the import flow. Owns which
-// definition is selected (the :id slice of the URL) and the load/create/delete.
+// The "Pipelines" tab of the definitions browser: the sidebar list and the
+// selected definition's detail (editor + history). Owns which definition is
+// selected (the :id slice of the URL) and the load/create/delete.
 import { ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
@@ -9,7 +9,6 @@ import StatePanel from './primitives/StatePanel.vue'
 import PipelineDefinitionsList from './PipelineDefinitionsList.vue'
 import PipelineDefinitionEditor from './PipelineDefinitionEditor.vue'
 import PipelineHistorySection from './PipelineHistorySection.vue'
-import PipelineImportModal from './PipelineImportModal.vue'
 
 interface DefDetail { id: string; name: string; content: string; stages: any[]; skills: Array<{ name: string; content: string }>; claudeMd: string }
 
@@ -22,7 +21,6 @@ const detail = ref<DefDetail | null>(null)
 const history = ref<Array<{ sha: string; author: string; date: string; message: string }>>([])
 const loading = ref(false)
 const creating = ref(false)
-const showImport = ref(false)
 
 onMounted(load)
 
@@ -82,11 +80,6 @@ async function onSaved() {
   await select(detail.value.id)
   await load()
 }
-
-async function onImported(id: string) {
-  await load()
-  router.push('/definitions/pipelines/' + id)
-}
 </script>
 
 <template>
@@ -97,7 +90,6 @@ async function onImported(id: string) {
       :creating="creating"
       @select="router.push('/definitions/pipelines/' + $event)"
       @create="createDefinition"
-      @import="showImport = true"
     />
 
     <div class="defs-detail">
@@ -117,8 +109,6 @@ async function onImported(id: string) {
       <StatePanel v-else>Select a definition</StatePanel>
     </div>
   </div>
-
-  <PipelineImportModal v-model:open="showImport" @imported="onImported" />
 </template>
 
 <style scoped>

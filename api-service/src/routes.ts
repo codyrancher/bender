@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { getTemplateIds, scaffoldTemplate, getTemplateVars, getTemplateMeta, getBrowserPort, DEFAULT_BROWSER_SIDECAR, DEFAULT_BROWSER_PORT, SidecarDef, TemplateMeta, renderString } from './services/templates';
 import { extractPipelineFlags } from './utils/pipelineFlags';
 import { broadcast } from './services/events';
-import { materializeInto as materializeDefinition, rematerializeSkills, writeDefinition, getDefinition } from './services/definitions';
+import { materializeInto as materializeDefinition, rematerializeSkills, getDefinition } from './services/definitions';
 
 import {
   PIPELINES_DIR, COMPOSE_PROJECT, CLAUDE_CONFIG_DIR, STAGE_TIMEOUT_MS, BENDER_IMAGE,
@@ -17,7 +17,7 @@ import { readSettings, envKeys } from './services/settings';
 import { readGithubToken, credentialEnvArgs } from './services/credentials';
 import { getContainerStatus, getContainerIp, waitForContainerIp, chownRecursive } from './utils/container';
 import { BenderJson, readBenderJson, pipelineUid, pipelineArgEnvArgs } from './services/benderJson';
-import { PipelineStage, parsePipelineStages, resolveGraph, readPipelineStages, parsePipelineArgs } from './utils/pipelineParser';
+import { PipelineStage, resolveGraph, readPipelineStages, parsePipelineArgs } from './utils/pipelineParser';
 import { snapshotDir, snapshotWorkspace, restoreWorkspace } from './services/snapshots';
 import { getSidecarContainerNames, startSidecars, stopSidecars, removeSidecars } from './services/sidecars';
 import { runInitScript, runSidecarsUpScript } from './services/initScripts';
@@ -894,40 +894,6 @@ export function registerRoutes(app: Express): void {
 
 
   // Push a pipeline's pipeline.md + its referenced skills to the global definitions repo
-  app.post('/api/pipelines/:name/push-definition', (req: Request, res: Response) => {
-    try {
-      const pipeline = req.params.name;
-      const pipelineDir = path.join(PIPELINES_DIR, pipeline);
-      const mdPath = path.join(pipelineDir, 'pipeline.yaml');
-      if (!fs.existsSync(mdPath)) {
-        return res.status(404).json({ error: 'Pipeline has no pipeline.yaml' });
-      }
-      const definitionId = (req.body.definitionId || pipeline).trim();
-      const message = (req.body.message || `Update ${definitionId} from ${pipeline}`).trim();
-
-      const pipelineMd = fs.readFileSync(mdPath, 'utf-8');
-      // Gather the SKILL.md for each unique skill referenced by the pipeline
-      const skills: Array<{ name: string; content: string }> = [];
-      const seen = new Set<string>();
-      for (const stage of parsePipelineStages(pipelineMd)) {
-        if (!stage.skill || seen.has(stage.skill)) continue;
-        seen.add(stage.skill);
-        const sp = resolveSkillPath(pipeline, stage.skill);
-        if (sp && fs.existsSync(sp)) {
-          skills.push({ name: stage.skill, content: fs.readFileSync(sp, 'utf-8') });
-        }
-      }
-
-      const { sha } = writeDefinition({ id: definitionId, pipelineMd, skills, message });
-      res.json({ id: definitionId, sha, skillCount: skills.length });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-
-
-
 
 
 
