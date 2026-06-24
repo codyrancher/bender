@@ -57,24 +57,23 @@ bender/
 ## Volumes
 
 Configured on the `bender` service in [docker-compose.yml](docker-compose.yml).
-State lives under `~/bender` on the host (override the base dir with the
-`BENDER_DIR` env var); the inner containers receive the relevant `/data/*`
-subpaths from `setup.sh`.
+All bender state lives under a single `/data` mount from `~/bender` (override the
+base with `BENDER_DIR`); `setup.sh` passes `/data` through to the inner
+containers.
 
 | Host | Container | Purpose |
 |------|-----------|---------|
 | `bender-dind` (named volume) | `/var/lib/docker` | The inner Docker daemon's storage (images/layers/containers), persisted across restarts. |
-| `${BENDER_DIR:-~/bender}/pipelines` | `/data/pipelines` | Per-pipeline workspaces (each holds `.bender.json`, `pipeline.yaml`, skills). |
-| `${BENDER_DIR:-~/bender}/.credentials` | `/data/credentials` | Claude login, persisted across restarts. |
-| `${BENDER_DIR:-~/bender}/.config` | `/data/config` | The consolidated **definitions** git repo (`pipelines/<id>/`, `skills/<id>/`). |
-| `${BENDER_DIR:-~/bender}/.cli` | `/data/cli` | Global Claude CLI workspace/state. |
-| `${BENDER_DIR:-~/bender}/.browser-profile` | `/data/browser-profile` | Persistent browser profile. |
-| `~/.gitconfig` (read-only) | `/data/gitconfig` | Commit identity (name/email) for pipelines. |
-| `./api-service/templates` | `/data/templates` | Workspace templates — bind-mounted, so edits are live without an image rebuild. |
+| `${BENDER_DIR:-~/bender}` | `/data` | **All bender state** — `pipelines/` (per-instance workspaces), `credentials/` (Claude login), `config/` (the definitions git repo), `cli/`, `browser-profile/`, plus runtime state like `rancher-data/`. |
+| `~/.gitconfig` (read-only) | `/data/gitconfig` | Commit identity (name/email) for pipelines — sourced from your real host gitconfig. |
+| `./api-service/templates` | `/data/templates` | Workspace templates — bind-mounted from the repo, so edits are live without an image rebuild. |
 | `/dev/snd` | `/dev/snd` | Host audio device (also exposed via `devices:`). |
 
-The named `bender-dind` volume is declared in the top-level `volumes:` block;
-everything else is a host bind-mount.
+`gitconfig` and `templates` are overlay mounts that come from **outside**
+`~/bender` (your host gitconfig and the repo working tree), so they layer on top
+of the single `/data` mount as nested bind-mounts. The named `bender-dind` volume
+is declared in the top-level `volumes:` block; everything else is a host
+bind-mount.
 
 ## Images
 
