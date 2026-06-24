@@ -35,6 +35,8 @@ export function registerRoutes(app: Express): void {
         status: string;
         template?: string;
         definition?: string;
+        label?: string;
+        args?: Record<string, string>;
         browserPort?: number;
         browserHost?: string;
         stages?: PipelineStage[];
@@ -56,6 +58,8 @@ export function registerRoutes(app: Express): void {
               status,
               ...(meta?.template && { template: meta.template }),
               ...(meta?.definitionId && { definition: meta.definitionId }),
+              ...(meta?.label && { label: meta.label }),
+              ...(meta?.args && Object.keys(meta.args).length && { args: meta.args }),
               ...(browserPort && { browserPort }),
               ...(meta?.browserHost && { browserHost: meta.browserHost }),
               ...(stages.length && { stages }),
@@ -204,6 +208,7 @@ export function registerRoutes(app: Express): void {
       const harnessJson: BenderJson = {
         ...(template && { template }),
         ...(req.body.definitionId && { definitionId: String(req.body.definitionId).trim() }),
+        ...(req.body.label && { label: String(req.body.label).trim() }),
         uid: `${Date.now().toString(36)}-${hexId(8)}`,
         sidecars: sidecars.map(s => s.suffix),
         browserPort,

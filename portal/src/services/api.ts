@@ -53,7 +53,7 @@ export const api = {
 
   async createPipeline(
     name: string,
-    opts?: { pipelineMd?: string; definitionId?: string; template?: string; vars?: Record<string, string>; args?: Record<string, string> },
+    opts?: { pipelineMd?: string; definitionId?: string; template?: string; label?: string; vars?: Record<string, string>; args?: Record<string, string> },
   ): Promise<CreatePipelineResponse> {
     return fetchJSON<CreatePipelineResponse>(`${API_BASE}/pipelines`, {
       method: 'POST',

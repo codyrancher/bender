@@ -9,6 +9,9 @@ export interface BenderJson {
   // The pipeline-definition id this instance was created from (if any). Used to
   // link "Edit pipeline" to the right definition (the instance name often differs).
   definitionId?: string;
+  // Human-friendly display label, e.g. "Rancher Issue Fix & Demo - k3x9a1".
+  // The instance `name` is a slug used for the container/dir/routes.
+  label?: string;
   uid?: string;
   sidecars: string[];
   browserPort?: number;

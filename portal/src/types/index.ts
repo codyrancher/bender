@@ -73,6 +73,10 @@ export interface Pipeline {
   template?: string
   // The definition id this instance was created from (often ≠ the instance name).
   definition?: string
+  // Human-friendly display label, e.g. "Rancher Issue Fix & Demo - k3x9a1".
+  label?: string
+  // The args this instance was created with (shown muted on the list card).
+  args?: Record<string, string>
   browserPort?: number
   browserHost?: string
   stages?: PipelineStage[]

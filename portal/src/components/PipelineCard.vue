@@ -34,6 +34,8 @@ const emit = defineEmits<{
   (e: 'view-pipeline-md', run: PipelineRun): void
 }>()
 
+const argEntries = computed(() => Object.entries(props.pipeline.args || {}))
+
 const latestRun = computed<PipelineRun | null>(() => props.runs.length ? props.runs[0] : null)
 
 const isRunActive = computed(() => latestRun.value?.status === 'running' || props.starting)
@@ -77,7 +79,7 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   <div class="pipeline-card" :class="{ deleting: pipeline.status === 'deleting' }">
     <div class="pipeline-header">
       <div class="pipeline-name-row">
-        <span class="pipeline-name">{{ pipeline.name }}</span>
+        <span class="pipeline-name">{{ pipeline.label || pipeline.name }}</span>
         <span v-if="pipeline.status === 'deleting'" class="deleting-badge">
           <span class="deleting-spinner"></span> Deleting…
         </span>
@@ -95,6 +97,11 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
             <TrashIcon width="15" height="15" />
           </IconButton>
         </div>
+      </div>
+      <div v-if="argEntries.length" class="pipeline-args">
+        <span v-for="[k, v] in argEntries" :key="k" class="pipeline-arg">
+          <span class="arg-k">{{ k }}</span>=<span class="arg-v">{{ v }}</span>
+        </span>
       </div>
     </div>
 
@@ -263,6 +270,19 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   align-items: center;
   gap: 4px;
 }
+
+.pipeline-args {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--color-text-muted);
+}
+
+.pipeline-arg .arg-k { color: var(--color-text-secondary); }
+.pipeline-arg .arg-v { color: var(--color-text-muted); }
 
 /* Stage row holds the stage graph plus a large, right-aligned Run button */
 .stage-row {

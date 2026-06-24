@@ -15,16 +15,12 @@ const emit = defineEmits<{ (e: 'update:open', value: boolean): void }>()
 const pipelinesStore = usePipelinesStore()
 
 const definitions = ref<Array<{ id: string; name: string; args?: PipelineArg[] }>>([])
-const newName = ref('')
 const selectedDefinition = ref('')
 const argValues = ref<Record<string, string>>({})
 const creating = ref(false)
 
-const selectedArgs = computed<PipelineArg[]>(() =>
-  selectedDefinition.value
-    ? definitions.value.find(d => d.id === selectedDefinition.value)?.args || []
-    : [],
-)
+const selectedDef = computed(() => definitions.value.find(d => d.id === selectedDefinition.value))
+const selectedArgs = computed<PipelineArg[]>(() => selectedDef.value?.args || [])
 const argsValid = computed(() =>
   selectedArgs.value.every(a => !a.required || (argValues.value[a.name] || '').trim()),
 )
@@ -39,7 +35,6 @@ watch(selectedArgs, seedArgs)
 
 watch(() => props.open, async (open) => {
   if (!open) return
-  newName.value = ''
   argValues.value = {}
   try {
     const data = await api.getDefinitions()
@@ -56,7 +51,8 @@ function close() {
 }
 
 async function handleCreate() {
-  if (!newName.value.trim() || creating.value || !argsValid.value) return
+  const def = selectedDef.value
+  if (!def || creating.value || !argsValid.value) return
   creating.value = true
   try {
     const args: Record<string, string> = {}
@@ -64,8 +60,14 @@ async function handleCreate() {
       const v = (argValues.value[a.name] || '').trim()
       if (v) args[a.name] = v
     }
-    await pipelinesStore.createPipeline(newName.value.trim(), {
-      definitionId: selectedDefinition.value || undefined,
+    // The instance name is a slug (container/dir/route id); the label is the
+    // human display: "<definition name> - <run id>". The short run id keys both.
+    const runId = Math.random().toString(36).slice(2, 8)
+    const name = `${def.id}-${runId}`
+    const label = `${def.name} - ${runId}`
+    await pipelinesStore.createPipeline(name, {
+      definitionId: def.id,
+      label,
       ...(Object.keys(args).length && { args }),
     })
     emit('update:open', false)
@@ -79,16 +81,6 @@ async function handleCreate() {
 <template>
   <Modal v-if="open" title="New Pipeline" @close="close">
     <div class="modal-pad">
-      <div class="form-group">
-        <label>Name</label>
-        <input
-          v-model="newName"
-          type="text"
-          placeholder="my-pipeline"
-          autofocus
-          @keydown.enter="handleCreate"
-        />
-      </div>
       <div class="form-group">
         <label>Pipeline Definition</label>
         <select v-model="selectedDefinition">
@@ -125,7 +117,7 @@ async function handleCreate() {
     </div>
     <template #footer>
       <Button variant="secondary" :disabled="creating" @click="close">Cancel</Button>
-      <Button variant="primary" :disabled="!newName.trim() || creating || !argsValid" @click="handleCreate">
+      <Button variant="primary" :disabled="!selectedDefinition || creating || !argsValid" @click="handleCreate">
         {{ creating ? 'Creating...' : 'Create' }}
       </Button>
     </template>
