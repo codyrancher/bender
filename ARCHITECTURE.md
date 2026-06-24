@@ -6,25 +6,10 @@ runs an inner Docker daemon; `harness/setup.sh` then starts the inner containers
 
 - **bender-nginx** — reverse proxy. Serves the portal and routes `/api/*` to the
   API and `/c/<pipeline>/*` to each pipeline's code-server / browser.
-- **bender-api** — the Express/TypeScript API (built from `api-service/`). It is
-  the control plane for everything the portal does:
-  - **Pipeline lifecycle** — create instances (scaffold a template + materialize
-    a definition into `pipelines/<slug>/`), start/stop/restart/reprovision their
-    containers, and delete them.
-  - **Run engine** (`services/runExecutor`) — executes a definition's stage graph
-    (fork/join on the `next` edges), runs each stage's skill via the Claude CLI,
-    streams logs, records the success verdict, and collects artifacts in a SQLite
-    runs DB.
-  - **Definitions & skills** — CRUD + git history/diff over the consolidated
-    definitions repo, and per-item push/pull **sync** with a remote.
-  - **Sidecars & snapshots** — start/stop browser/Rancher sidecars; take per-stage
-    workspace snapshots so a stage can be re-run from its exact starting state.
-  - **Global Claude CLI** — a persistent tmux + Claude PTY exposed over a
-    websocket (the portal's terminal), plus workspace/upload/CLAUDE.md file ops.
-  - **Insights** — a SQLite DB (e.g. missing-tool reports) with a read/query
-    browser.
-  - **Events** — a websocket bus that pushes live pipeline/run updates to the
-    portal.
+- **bender-api** — the Express/TypeScript API (built from `api-service/`). The
+  control plane behind the portal: it manages pipeline lifecycle and runs the
+  stage graph via the Claude CLI, handles definitions/skills (git history + sync),
+  sidecars, the global Claude terminal, and live updates over a websocket.
 - **bender-&lt;pipeline&gt;-1** — one container per pipeline instance, with
   code-server, a browser sidecar, and an optional Rancher sidecar.
 
