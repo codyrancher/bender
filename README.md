@@ -9,39 +9,14 @@ sidecar. The Vue 3 portal drives creation, runs, and review.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together.
 
-## Prerequisites
-
-- **Docker + Docker Compose** — the `bender` service runs privileged
-  (Docker-in-Docker).
-- A **GitHub classic PAT** with `public_repo` scope — used by git + `gh` inside
-  pipelines (clone, push, open/comment on PRs). See [.env.example](.env.example).
-- **`GIT_USER_NAME` / `GIT_USER_EMAIL`** in `.env` — the commit identity used
-  inside pipelines (the PAT is auth only).
-
-## First-time setup
-
-```bash
-cp .env.example .env
-# Edit .env:
-#   PUID / PGID                  -> `id -u` / `id -g`
-#   GITHUB_TOKEN                 -> your classic PAT (public_repo)
-#   GIT_USER_NAME / _EMAIL       -> commit identity for pipelines
-#   (AWS_* / DIGITALOCEAN_* are optional, left commented)
-
-docker compose up -d --build
-```
-
-Then open the portal at **https://localhost:4444** (self-signed cert — accept the
-warning). Plain HTTP is on **http://localhost:8009**.
-
-The Claude CLI inside pipelines authenticates via **interactive login** on first
-use; credentials persist in `~/bender/.credentials`.
-
 ## Run from the published image
 
-To run bender without cloning the repo, use the image on GHCR
-(`ghcr.io/codyrancher/bender`). The package is private, so authenticate first
-(skip this if it's been made public) with a PAT that has `read:packages`:
+The quickest way to run bender — no clone or build. You need Docker and a GitHub
+classic PAT with `public_repo` scope (used by git + `gh` inside pipelines).
+
+The image lives on GHCR (`ghcr.io/codyrancher/bender`). It's private, so
+authenticate first (skip this if it's been made public) with a PAT that has
+`read:packages`:
 
 ```bash
 echo "<PAT with read:packages>" | docker login ghcr.io -u <github-user> --password-stdin
@@ -64,14 +39,40 @@ docker run -d \
   ghcr.io/codyrancher/bender:latest
 ```
 
-Open the portal at **https://localhost:4444** (accept the self-signed cert).
-First boot takes a minute — it starts an inner dockerd and builds its API image.
+Open the portal at **https://localhost:4444** (accept the self-signed cert; plain
+HTTP is on **http://localhost:8009**). First boot takes a minute — it starts an
+inner dockerd and builds its API image. The Claude CLI inside pipelines
+authenticates via interactive login on first use.
 
-- The templates the pipelines use are baked into the image (no `./api-service/templates`
+- The templates pipelines use are baked into the image (no `./api-service/templates`
   bind-mount needed; that's a dev-only overlay).
 - **Upgrade:** `docker pull ghcr.io/codyrancher/bender:latest`, then
   `docker rm -f bender` and re-run the command above. `~/bender` and the
   `bender-dind` volume keep your pipelines/credentials/state.
+
+## Development setup
+
+To build and run from source (for working on bender itself).
+
+**Prerequisites:**
+- **Docker + Docker Compose** — the `bender` service runs privileged
+  (Docker-in-Docker).
+- A **GitHub classic PAT** with `public_repo` scope. See [.env.example](.env.example).
+- **`GIT_USER_NAME` / `GIT_USER_EMAIL`** — the commit identity used inside
+  pipelines (the PAT is auth only).
+
+```bash
+cp .env.example .env
+# Edit .env:
+#   PUID / PGID                  -> `id -u` / `id -g`
+#   GITHUB_TOKEN                 -> your classic PAT (public_repo)
+#   GIT_USER_NAME / _EMAIL       -> commit identity for pipelines
+#   (AWS_* / DIGITALOCEAN_* are optional, left commented)
+
+docker compose up -d --build
+```
+
+Then open the portal at **https://localhost:4444**.
 
 ## Making changes
 
