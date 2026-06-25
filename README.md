@@ -37,6 +37,42 @@ warning). Plain HTTP is on **http://localhost:8009**.
 The Claude CLI inside pipelines authenticates via **interactive login** on first
 use; credentials persist in `~/bender/.credentials`.
 
+## Run from the published image
+
+To run bender without cloning the repo, use the image on GHCR
+(`ghcr.io/codyrancher/bender`). The package is private, so authenticate first
+(skip this if it's been made public) with a PAT that has `read:packages`:
+
+```bash
+echo "<PAT with read:packages>" | docker login ghcr.io -u <github-user> --password-stdin
+```
+
+Then run it — privileged Docker-in-Docker, with all state persisted in `~/bender`:
+
+```bash
+docker run -d \
+  --name bender \
+  --privileged \
+  --restart unless-stopped \
+  -p 8009:80 -p 4444:443 \
+  -e PUID=$(id -u) -e PGID=$(id -g) \
+  -e GITHUB_TOKEN='<classic PAT, public_repo>' \
+  -e GIT_USER_NAME='Your Name' \
+  -e GIT_USER_EMAIL='you@example.com' \
+  -v ~/bender:/data \
+  -v bender-dind:/var/lib/docker \
+  ghcr.io/codyrancher/bender:latest
+```
+
+Open the portal at **https://localhost:4444** (accept the self-signed cert).
+First boot takes a minute — it starts an inner dockerd and builds its API image.
+
+- The templates the pipelines use are baked into the image (no `./api-service/templates`
+  bind-mount needed; that's a dev-only overlay).
+- **Upgrade:** `docker pull ghcr.io/codyrancher/bender:latest`, then
+  `docker rm -f bender` and re-run the command above. `~/bender` and the
+  `bender-dind` volume keep your pipelines/credentials/state.
+
 ## Making changes
 
 - **Portal or API code** (`portal/`, `api-service/src/`): baked into the image —
