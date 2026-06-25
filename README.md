@@ -4,8 +4,8 @@ Docker-based pipeline orchestration/visualization platform for running
 rancher/dashboard issue-fix pipelines.
 
 A pipeline is a graph of stages; each stage runs a skill via the Claude CLI
-inside a per-pipeline container, with a code-server + browser environment and an
-optional Rancher sidecar. The Vue 3 portal drives creation, runs, and review.
+inside a per-pipeline container, with a browser sidecar and an optional Rancher
+sidecar. The Vue 3 portal drives creation, runs, and review.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how it fits together.
 

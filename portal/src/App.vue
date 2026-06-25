@@ -5,7 +5,6 @@ import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import TabBar from '@/components/TabBar.vue'
 import Toast from '@/components/Toast.vue'
-import DropOverlay from '@/components/DropOverlay.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
 import ClaudeCliPage from '@/components/ClaudeCliPage.vue'
 
@@ -28,7 +27,6 @@ onMounted(async () => {
   <ClaudeCliPage v-if="!route.meta.bare" />
   <TabBar v-if="!route.meta.bare" />
   <Toast />
-  <DropOverlay />
   <DeletePipelineModal />
 </template>
 

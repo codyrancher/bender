@@ -107,11 +107,4 @@ export interface CreatePipelineResponse {
   error?: string
 }
 
-export interface UploadResponse {
-  status: string
-  path: string
-  filename: string
-  error?: string
-}
-
 

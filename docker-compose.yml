@@ -10,7 +10,6 @@ services:
     ports:
       - "8009:80"
       - "4444:443"
-      - "6007:6006"
     volumes:
       # 1. Persistent bender state — the single data volume. Everything the app
       #    creates lives here: pipelines/, credentials/, config/ (definitions

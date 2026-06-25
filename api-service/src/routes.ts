@@ -128,7 +128,6 @@ export function registerRoutes(app: Express): void {
       // used by CLAUDE.md.hbs; add more as needed).
       const pipelineFlags = extractPipelineFlags(projectName);
       if (pipelineFlags.issueNumber) vars.issueNumber = pipelineFlags.issueNumber;
-      if (pipelineFlags.prNumber) vars.prNumber = pipelineFlags.prNumber;
       if (pipelineFlags.prime) vars.prime = 'true';
 
       if (template && getTemplateIds().includes(template)) {
@@ -906,59 +905,6 @@ export function registerRoutes(app: Express): void {
 
 
 
-  // Upload screenshot
-  app.post('/api/upload/:pipeline', (req: Request, res: Response) => {
-    const pipeline = req.params.pipeline;
-    const project = pipeline;
-    try {
-      const projectPath = path.join(PIPELINES_DIR, project);
-      if (!fs.existsSync(projectPath)) {
-        res.status(404).json({ error: 'Project not found' });
-        return;
-      }
-
-      let imageData: string = req.body.data || '';
-      const filename: string = req.body.filename || '';
-
-      if (!imageData) {
-        res.status(400).json({ error: 'No image data provided' });
-        return;
-      }
-
-      let ext = 'png';
-      if (imageData.startsWith('data:')) {
-        const [header, data] = imageData.split(',', 2);
-        imageData = data;
-        if (header.includes('image/png')) ext = 'png';
-        else if (header.includes('image/jpeg') || header.includes('image/jpg')) ext = 'jpg';
-        else if (header.includes('image/gif')) ext = 'gif';
-        else if (header.includes('image/webp')) ext = 'webp';
-      }
-
-      const screenshotsDir = path.join(projectPath, 'screenshots');
-      fs.mkdirSync(screenshotsDir, { recursive: true });
-      fs.chownSync(screenshotsDir, 1000, 1000);
-
-      const timestamp = Date.now();
-      let finalFilename: string;
-      if (filename) {
-        const safeName = path.parse(filename).name.replace(/[^a-zA-Z0-9_-]/g, '_');
-        finalFilename = `${safeName}_${timestamp}.${ext}`;
-      } else {
-        finalFilename = `screenshot_${timestamp}.${ext}`;
-      }
-
-      const filePath = path.join(screenshotsDir, finalFilename);
-      fs.writeFileSync(filePath, Buffer.from(imageData, 'base64'));
-      fs.chownSync(filePath, 1000, 1000);
-
-      const relativePath = `/workspace/screenshots/${finalFilename}`;
-
-      res.json({ status: 'uploaded', path: relativePath, filename: finalFilename });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   // System stats (memory + disk)
   app.get('/api/system/stats', (_req: Request, res: Response) => {

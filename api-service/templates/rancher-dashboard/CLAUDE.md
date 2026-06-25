@@ -22,7 +22,6 @@ Use `{{variableName}}` in .hbs files. Available variables:
 | `{{gitName}}` | Commit author name (from `GIT_USER_NAME`) |
 | `{{gitEmail}}` | Commit author email (from `GIT_USER_EMAIL`) |
 | `{{nodeVersion}}` | Node version (if specified during project creation) |
-| `{{rancherTag}}` | Rancher tag (if specified during project creation) |
 
 > **Credentials are NOT template variables.** Secrets (GitHub token,
 > AWS/DigitalOcean cloud keys) are injected into the container as

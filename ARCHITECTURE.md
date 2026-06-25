@@ -4,14 +4,15 @@ One privileged Docker-in-Docker container does everything. The `bender`
 docker-compose service (built from `harness/Dockerfile`, based on `docker:dind`)
 runs an inner Docker daemon; `harness/setup.sh` then starts the inner containers:
 
-- **bender-nginx** — reverse proxy. Serves the portal and routes `/api/*` to the
-  API and `/c/<pipeline>/*` to each pipeline's code-server / browser.
+- **bender-nginx** — reverse proxy. Serves the portal, routes `/api/*` to the
+  API, and `/d/<pipeline>/<port>/*` to each pipeline's browser sidecar.
 - **bender-api** — the Express/TypeScript API (built from `api-service/`). The
   control plane behind the portal: it manages pipeline lifecycle and runs the
   stage graph via the Claude CLI, handles definitions/skills (git history + sync),
   sidecars, the global Claude terminal, and live updates over a websocket.
-- **bender-&lt;pipeline&gt;-1** — one container per pipeline instance, with
-  code-server, a browser sidecar, and an optional Rancher sidecar.
+- **bender-&lt;pipeline&gt;-1** — one container per pipeline instance (runs the
+  Claude CLI for each stage), with a browser sidecar and an optional Rancher
+  sidecar.
 
 ```
 host

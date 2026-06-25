@@ -9,7 +9,6 @@ export const useUiStore = defineStore('ui', () => {
   const isLoading = ref(true)
   const loadingMessage = ref('Loading pipelines...')
   const toasts = ref<Toast[]>([])
-  const isDragging = ref(false)
   const sidebarCollapsed = ref(false)
   // Global terminal drawer (slides up from the bottom, persists across pages).
   const terminalOpen = ref(false)
@@ -48,10 +47,6 @@ export const useUiStore = defineStore('ui', () => {
     deletePipelineName.value = null
   }
 
-  function setDragging(value: boolean) {
-    isDragging.value = value
-  }
-
   function toggleSidebar() {
     sidebarCollapsed.value = !sidebarCollapsed.value
   }
@@ -67,14 +62,12 @@ export const useUiStore = defineStore('ui', () => {
     isLoading,
     loadingMessage,
     toasts,
-    isDragging,
     sidebarCollapsed,
     showLoading,
     hideLoading,
     showToast,
     openDeletePipelineModal,
     closeDeletePipelineModal,
-    setDragging,
     toggleSidebar,
   }
 })

@@ -2,7 +2,6 @@ import type {
   PipelinesResponse,
   StatusResponse,
   CreatePipelineResponse,
-  UploadResponse,
   PipelineRun,
   PipelineStage,
   PipelineArg,
@@ -267,18 +266,6 @@ export const api = {
     })
   },
 
-
-  async uploadImage(pipeline: string, base64Data: string, filename: string): Promise<UploadResponse> {
-    return fetchJSON(`${API_BASE}/upload/${pipeline}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: base64Data, filename }),
-    })
-  },
-
-  async removePortMapping(pipeline: string, service: string): Promise<{ status: string }> {
-    return fetchJSON(`${API_BASE}/settings/port-mappings/${pipeline}/${service}`, { method: 'DELETE' })
-  },
 
   async getPipelineRuns(pipeline: string, limit = 20, offset = 0): Promise<{ runs: PipelineRun[]; total: number }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs?limit=${limit}&offset=${offset}`)
