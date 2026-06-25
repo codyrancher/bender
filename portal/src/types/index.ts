@@ -82,8 +82,6 @@ export interface Pipeline {
   stages?: PipelineStage[]
 }
 
-export type ViewMode = 'vscode' | 'browser' | 'split'
-
 export interface Toast {
   id: number
   message: string

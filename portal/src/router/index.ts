@@ -1,9 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import type { ViewMode } from '@/types'
 import PipelinesPage from '@/pages/PipelinesPage.vue'
-import VscodePage from '@/pages/VscodePage.vue'
-import BrowserPage from '@/pages/BrowserPage.vue'
-import SplitPage from '@/pages/SplitPage.vue'
 import SettingsPage from '@/pages/SettingsPage.vue'
 import DefinitionsBrowser from '@/pages/DefinitionsBrowser.vue'
 import PipelineSchemaDoc from '@/pages/PipelineSchemaDoc.vue'
@@ -15,26 +11,6 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: PipelinesPage,
-    },
-    // Each view mode is its own page, but they all compose the shared
-    // PipelineWorkspace component for now.
-    {
-      path: '/:pipelineId/vscode',
-      name: 'vscode',
-      component: VscodePage,
-      meta: { view: 'vscode' as ViewMode },
-    },
-    {
-      path: '/:pipelineId/browser',
-      name: 'browser',
-      component: BrowserPage,
-      meta: { view: 'browser' as ViewMode },
-    },
-    {
-      path: '/:pipelineId/split',
-      name: 'split',
-      component: SplitPage,
-      meta: { view: 'split' as ViewMode },
     },
     {
       path: '/settings',

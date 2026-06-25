@@ -6,7 +6,6 @@ import { useUiStore } from './ui'
 
 export const usePipelinesStore = defineStore('pipelines', () => {
   const pipelines = ref<Pipeline[]>([])
-  const loadedIframes = ref<Set<string>>(new Set())
   const startingPipelines = ref<Set<string>>(new Set())
   const stoppingPipelines = ref<Set<string>>(new Set())
 
@@ -56,16 +55,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     }
   }
 
-  async function loadPipeline(pipelineName: string) {
-    const ui = useUiStore()
-    const pl = pipelines.value.find((p) => p.name === pipelineName)
-    if (!pl) return false
-
-    loadedIframes.value.add(pipelineName)
-    ui.hideLoading()
-    return true
-  }
-
   function isPipelineStarting(pipelineName: string) {
     return startingPipelines.value.has(pipelineName)
   }
@@ -110,7 +99,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
       stoppingPipelines.value.add(pipelineName)
       await api.stopPipeline(pipelineName)
       await refreshPipelineStatus(pipelineName)
-      loadedIframes.value.delete(pipelineName)
     } catch (err) {
       console.error('Failed to stop pipeline:', err)
       ui.showToast('Failed to stop pipeline', 'error')
@@ -124,8 +112,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     try {
       await api.restartPipeline(pipelineName)
       await new Promise((resolve) => setTimeout(resolve, 5000))
-      loadedIframes.value.delete(pipelineName)
-      loadedIframes.value.add(pipelineName)
     } catch (err) {
       console.error('Failed to restart pipeline:', err)
       ui.showToast('Failed to restart pipeline', 'error')
@@ -186,7 +172,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
       // The delete endpoint streams SSE progress; always consume it as a stream
       // (api.deletePipeline's response.json() would choke on the "data:" lines).
       await api.deletePipelineStream(pipelineName, onLog ?? (() => {}))
-      loadedIframes.value.delete(pipelineName)
       startingPipelines.value.delete(pipelineName)
       stoppingPipelines.value.delete(pipelineName)
       await fetchPipelines()
@@ -197,15 +182,10 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     }
   }
 
-  function isIframeLoaded(pipelineName: string) {
-    return loadedIframes.value.has(pipelineName)
-  }
-
   return {
     pipelines,
     currentPipeline,
     fetchPipelines,
-    loadPipeline,
     startPipeline,
     stopPipeline,
     restartPipeline,
@@ -213,7 +193,6 @@ export const usePipelinesStore = defineStore('pipelines', () => {
     refreshPipelineStatus,
     createPipeline,
     deletePipeline,
-    isIframeLoaded,
     isPipelineStarting,
     isPipelineStopping,
     isPipelineRunning,

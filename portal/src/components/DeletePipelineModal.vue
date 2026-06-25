@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { usePipelineId } from '@/composables/route'
 import { useScrollToBottom } from '@/composables/useScrollToBottom'
 import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 
-const router = useRouter()
-const pipelineId = usePipelineId()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 
@@ -42,18 +38,9 @@ async function handleDelete() {
   if (!name || isDeleting.value) return
 
   isDeleting.value = true
-  const wasActive = pipelineId.value === name
   try {
     await pipelinesStore.deletePipeline(name, appendLog)
     uiStore.closeDeletePipelineModal()
-    if (wasActive) {
-      const remaining = pipelinesStore.pipelines
-      if (remaining.length > 0) {
-        router.replace(`/${remaining[0].name}/vscode`)
-      } else {
-        router.replace('/')
-      }
-    }
   } catch {
     isDeleting.value = false
   }

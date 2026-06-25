@@ -1,38 +1,23 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
-import { usePipelineId } from '@/composables/route'
 import TabBar from '@/components/TabBar.vue'
 import Toast from '@/components/Toast.vue'
 import DropOverlay from '@/components/DropOverlay.vue'
 import DeletePipelineModal from '@/components/DeletePipelineModal.vue'
 import ClaudeCliPage from '@/components/ClaudeCliPage.vue'
 
-const pipelineId = usePipelineId()
 const pipelinesStore = usePipelinesStore()
 const uiStore = useUiStore()
 const route = useRoute()
 // Standalone "bare" pages (e.g. the schema doc) render without the app chrome.
 
-watch(pipelineId, async (id) => {
-  if (id) {
-    await pipelinesStore.loadPipeline(id)
-  }
-})
-
 onMounted(async () => {
   await pipelinesStore.fetchPipelines()
   pipelinesStore.connectEvents()
-
-  // The pipeline routes load their pipeline (which clears the loading overlay);
-  // every other route has nothing to load, so drop the overlay immediately.
-  if (pipelineId.value) {
-    await pipelinesStore.loadPipeline(pipelineId.value)
-  } else {
-    uiStore.hideLoading()
-  }
+  uiStore.hideLoading()
 })
 </script>
 
