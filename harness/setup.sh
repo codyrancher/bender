@@ -350,43 +350,6 @@ if ! docker exec bender-browser ss -tln | grep -q ':9223 '; then
     echo "CDP proxy started on port 9223"
 fi
 
-# Android emulator (redroid) + web display (ws-scrcpy)
-if ! docker ps -q -f name=bender-android | grep -q .; then
-    echo "Starting Android emulator (redroid)..."
-    docker rm -f bender-android 2>/dev/null || true
-    docker run -d \
-        --name bender-android \
-        --privileged \
-        --network bender_default \
-        -v /dev/binderfs:/dev/binderfs \
-        redroid/redroid:14.0.0-latest \
-        androidboot.redroid_width=1080 \
-        androidboot.redroid_height=1920 \
-        androidboot.redroid_dpi=420 \
-        androidboot.redroid_fps=30 \
-        ro.setupwizard.mode=DISABLED
-    echo "Android emulator started"
-else
-    echo "Android emulator already running"
-fi
-
-if ! docker ps -q -f name=bender-ws-scrcpy | grep -q .; then
-    echo "Starting ws-scrcpy (Android web display)..."
-    docker rm -f bender-ws-scrcpy 2>/dev/null || true
-    docker run -d \
-        --name bender-ws-scrcpy \
-        --network bender_default \
-        scavin/ws-scrcpy
-    echo "ws-scrcpy started, connecting to Android..."
-    # Wait for ADB to be available then connect (background, non-blocking)
-    (for i in $(seq 1 30); do
-        docker exec bender-ws-scrcpy adb connect bender-android:5555 2>/dev/null && break
-        sleep 2
-    done) &
-else
-    echo "ws-scrcpy already running"
-fi
-
 # Seed templates ONLY when /data/templates is empty (a fresh install). In dev it
 # is bind-mounted from the repo and is the source of truth — copying the baked
 # templates over it would resurrect deleted/edited ones (the template clobber

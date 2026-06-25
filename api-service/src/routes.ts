@@ -23,7 +23,6 @@ import { getSidecarContainerNames, startSidecars, stopSidecars, removeSidecars }
 import { runInitScript, runSidecarsUpScript } from './services/initScripts';
 import { getRunsDb, stageArtifactDir, startExecution, cancelRun, cancelActiveRunsForPipeline } from './services/runExecutor';
 import { hexId } from './utils/id';
-import { execSync } from './utils/exec';
 
 export function registerRoutes(app: Express): void {
   // List all projects
