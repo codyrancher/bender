@@ -387,10 +387,17 @@ else
     echo "ws-scrcpy already running"
 fi
 
-# Sync templates to persistent volume (always, to pick up updates)
-echo "Syncing templates to /data/templates..."
+# Seed templates ONLY when /data/templates is empty (a fresh install). In dev it
+# is bind-mounted from the repo and is the source of truth — copying the baked
+# templates over it would resurrect deleted/edited ones (the template clobber
+# footgun), so skip the seed when it already has content.
 mkdir -p /data/templates
-cp -r "$API_SRC/templates/." /data/templates/
+if [ -z "$(ls -A /data/templates 2>/dev/null)" ]; then
+    echo "Seeding templates into empty /data/templates..."
+    cp -r "$API_SRC/templates/." /data/templates/
+else
+    echo "/data/templates already populated — leaving it as the source of truth"
+fi
 # Fix ownership so host user can edit template files (volume-mounted from host)
 chown -R 1000:1000 /data/templates/
 
