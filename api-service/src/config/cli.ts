@@ -76,45 +76,6 @@ curl -s -X POST \$BENDER_API/projects \\
 
 Always confirm the final name with the user before POSTing. Prime mode is available by including \`prime\` as a name token (e.g. \`chart-buttons-issue-10812-prime\`).
 
-## Auto-fixing the issue after creation
-
-Once the project is created, kick off an unattended claude run inside the project workspace. It follows the project's own CLAUDE.md (\`# Fix Issue\` → \`# Create a commit message\`) and writes everything to \`auto.logs\`.
-
-\`\`\`bash
-NAME=<project-name>
-CONTAINER=bender-\${NAME}-1
-
-# Launches detached: waits for init.sh to finish, then runs claude -p.
-# Streaming of /workspace/auto.logs is handled automatically by the project's
-# auto-log-tailer (started by init.sh) — it watches claude's own session
-# transcript and writes a human-readable stream to auto.logs regardless of
-# how claude is invoked. init.sh writes /workspace/.init-done on success
-# and exits non-zero on failure.
-docker exec -u 1000:1000 -d "\$CONTAINER" bash -lc '
-  for i in \$(seq 1 180); do
-    [ -f /workspace/.init-done ] && break
-    sleep 5
-  done
-  if [ ! -f /workspace/.init-done ]; then
-    echo "[auto] init never completed — see /workspace/.init.log for details" > /workspace/.auto-run.out
-    exit 1
-  fi
-  cd /workspace/dashboard
-  claude --dangerously-skip-permissions \\
-         --model claude-opus-4-6 \\
-         -p "Follow the Fix Issue section of /workspace/CLAUDE.md. When the fix is complete, stage the changes and follow the Create a commit message section to produce one commit on a new branch." \\
-    > /workspace/.auto-run.out 2>&1
-'
-
-# Watch progress (auto.logs is on the host at /data/pipelines/<name>/auto.logs)
-tail -f /data/pipelines/\$NAME/auto.logs
-\`\`\`
-
-Notes:
-- The project container doesn't have sidecars running yet; the project-level CLAUDE.md tells the agent how to bring up sidecars via \`$HARNESS_API/sidecars/start/$HARNESS_PROJECT\` if reproducing/testing the issue requires them.
-- Tell the user the auto-fix is running in the background and how to watch \`auto.logs\`. Offer to show a live tail when they ask.
-- \`auto.logs\` updates **live** as the agent works (human-readable, one line per event). Powered by a per-project background tailer that reads claude's own session transcript at \`/workspace/.claude-local/projects/…/<session>.jsonl\` — so it works whether claude was invoked via \`-p\`, stream-json, or an interactive session. The raw transcript is in the same directory if you need full tool inputs/outputs. \`.auto-run.out\` captures any startup-level errors from the docker-exec wrapper itself.
-
 ## Starting sidecars when the user is ready to work
 
 Sidecars (rancher, browser) are started separately so batch project creation stays cheap:

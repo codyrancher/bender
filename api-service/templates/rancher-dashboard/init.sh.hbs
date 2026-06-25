@@ -32,25 +32,9 @@ if [ -f /workspace/git-fix-commit ]; then
   mv /workspace/git-fix-commit /workspace/bin/git-fix-commit
   chmod +x /workspace/bin/git-fix-commit
 fi
-if [ -f /workspace/format-claude-stream ]; then
-  mv /workspace/format-claude-stream /workspace/bin/format-claude-stream
-  chmod +x /workspace/bin/format-claude-stream
-fi
 if [ -f /workspace/wait-for-sidecars ]; then
   mv /workspace/wait-for-sidecars /workspace/bin/wait-for-sidecars
   chmod +x /workspace/bin/wait-for-sidecars
-fi
-if [ -f /workspace/auto-log-tailer ]; then
-  mv /workspace/auto-log-tailer /workspace/bin/auto-log-tailer
-  chmod +x /workspace/bin/auto-log-tailer
-fi
-
-# Start the auto-log tailer in the background so any claude session that
-# runs in this project gets its transcript streamed into /workspace/auto.logs
-# — regardless of how claude was invoked (stream-json or not).
-if [ -x /workspace/bin/auto-log-tailer ]; then
-  nohup /workspace/bin/auto-log-tailer >> /workspace/.auto-log-tailer.log 2>&1 &
-  disown 2>/dev/null || true
 fi
 
 # Install CLI tools, Cypress system deps, and ffmpeg (for browser.mjs record).
