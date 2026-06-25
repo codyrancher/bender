@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import FileTextIcon from '@/assets/icons/file-text.svg?component'
 
+const props = defineProps<{ session: string }>()
 const emit = defineEmits<{ (e: 'open-editor'): void }>()
 
 const termEl = ref<HTMLDivElement | null>(null)
@@ -25,7 +26,7 @@ function connect() {
   if (!term) return
   status.value = 'connecting'
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-  ws = new WebSocket(`${proto}://${location.host}/api/cli`)
+  ws = new WebSocket(`${proto}://${location.host}/api/cli?session=${encodeURIComponent(props.session)}`)
 
   ws.onopen = () => {
     status.value = 'open'
@@ -222,12 +223,17 @@ onBeforeUnmount(() => {
   term = null
   ws = null
 })
+
+// Parent calls this when this terminal's tab becomes active — xterm can't
+// measure itself while hidden (v-show), so re-fit + focus on show.
+defineExpose({
+  fit: () => { doFit(); term?.focus() },
+})
 </script>
 
 <template>
   <div class="terminal">
     <div class="terminal-header">
-      <span class="title">Claude (global)</span>
       <span class="status" :class="status">{{ status }}</span>
       <span v-if="uploading" class="upload-badge">uploading...</span>
       <button class="md-btn" title="Edit CLAUDE.md" @click="emit('open-editor')">

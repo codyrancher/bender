@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
@@ -13,11 +13,24 @@ const uiStore = useUiStore()
 const route = useRoute()
 // Standalone "bare" pages (e.g. the schema doc) render without the app chrome.
 
+// Ctrl+` toggles the terminal drawer. Capture phase so it fires even when the
+// xterm textarea has focus.
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === '`' && e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault()
+    e.stopPropagation()
+    uiStore.toggleTerminal()
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown, true)
   await pipelinesStore.fetchPipelines()
   pipelinesStore.connectEvents()
   uiStore.hideLoading()
 })
+
+onUnmounted(() => window.removeEventListener('keydown', onKeydown, true))
 </script>
 
 <template>

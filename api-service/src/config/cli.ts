@@ -8,8 +8,13 @@ export const CLI_UID = 1000;
 export const CLI_GID = 1000;
 export const CLI_HOME = '/data/cli/home';
 export const CLI_WORKSPACE = '/data/cli/workspace';
-export const TMUX_SESSION = 'bender-global';
+// Each terminal tab is its own tmux session, named `${TMUX_PREFIX}-<id>`. They
+// all run as the same cli user with the same credentials, so they share auth.
+export const TMUX_PREFIX = 'bender-global';
 export const RUNNER = '/usr/local/bin/bender-global-session';
+// Credentials the global CLI's claude uses — the SAME dir pipeline containers
+// use (mounted there as /claude-data), so one sign-in covers terminals + runs.
+export const CLI_CLAUDE_CONFIG_DIR = '/data/credentials';
 
 export const CLAUDE_MD_PATH = path.join(CLI_WORKSPACE, 'CLAUDE.md');
 export const UPLOADS_DIR = path.join(CLI_WORKSPACE, 'uploads');
@@ -47,7 +52,7 @@ curl -s $BENDER_API/projects | jq '.[].name'
 Cwd: \`${CLI_WORKSPACE}\`. Files here persist across container restarts (backed by \`/data/cli/workspace\` on the host). Your credentials and chat history live in \`${CLI_HOME}\` (likewise persistent).
 
 ## Session persistence
-You run inside a tmux session named \`${TMUX_SESSION}\`. If the browser disconnects, your session keeps running. On reconnect the terminal reattaches.
+Each terminal tab runs in its own tmux session (named \`${TMUX_PREFIX}-<id>\`), all sharing your credentials. If the browser disconnects, the sessions keep running; reopening the drawer reattaches to them.
 
 ---
 

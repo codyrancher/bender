@@ -305,6 +305,32 @@ export const api = {
     })
   },
 
+  // Global Claude CLI: terminal sessions + shared auth (one sign-in for every
+  // terminal tab and pipeline run, since they share the credentials dir).
+  async getCliSessions(): Promise<{ sessions: string[] }> {
+    return fetchJSON(`${API_BASE}/cli/sessions`)
+  },
+
+  async closeCliSession(id: string): Promise<{ ok: boolean }> {
+    return fetchJSON(`${API_BASE}/cli/sessions/${id}`, { method: 'DELETE' })
+  },
+
+  async getCliAuth(): Promise<{ authenticated: boolean; method: string; loggedIn: boolean }> {
+    return fetchJSON(`${API_BASE}/cli/auth`)
+  },
+
+  async startCliLogin(): Promise<{ sessionId: string; url: string }> {
+    return fetchJSON(`${API_BASE}/cli/auth/login`, { method: 'POST' })
+  },
+
+  async completeCliLogin(sessionId: string, code: string): Promise<{ completed: boolean; authenticated: boolean; method: string }> {
+    return fetchJSON(`${API_BASE}/cli/auth/login/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+  },
+
   async getPipelineArgs(pipeline: string): Promise<{ args: Array<{ name: string; description: string; required: boolean; default: string; value: string }> }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/args`)
   },

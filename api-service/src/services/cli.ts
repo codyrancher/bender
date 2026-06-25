@@ -4,13 +4,86 @@
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import { WebSocketServer } from 'ws';
 import * as pty from 'node-pty';
 import { chownRecursive } from '../utils/container';
 import {
-  CLI_USER, CLI_UID, CLI_GID, CLI_HOME, CLI_WORKSPACE, TMUX_SESSION, RUNNER,
-  CLAUDE_MD_PATH, UPLOADS_DIR, GLOBAL_CLAUDE_MD,
+  CLI_USER, CLI_UID, CLI_GID, CLI_HOME, CLI_WORKSPACE, TMUX_PREFIX, RUNNER,
+  CLI_CLAUDE_CONFIG_DIR, CLAUDE_MD_PATH, UPLOADS_DIR, GLOBAL_CLAUDE_MD,
 } from '../config/cli';
+
+// A tmux/claude session id is the suffix of its session name. Restrict it to a
+// safe charset so it can't break out of the tmux -s/-t argument.
+function safeSessionId(id: string): string {
+  return /^[A-Za-z0-9_-]{1,40}$/.test(id) ? id : 'main';
+}
+
+// Run a command as the cli user with the shared HOME + CLAUDE_CONFIG_DIR.
+function asCliUser(cmd: string[]): string[] {
+  return ['gosu', CLI_USER, 'env',
+    `HOME=${CLI_HOME}`, `CLAUDE_CONFIG_DIR=${CLI_CLAUDE_CONFIG_DIR}`,
+    'PATH=/usr/local/bin:/usr/bin:/bin', ...cmd];
+}
+
+// The terminal session ids that currently have a live tmux session.
+export function listCliSessions(): string[] {
+  const [c, ...a] = asCliUser(['tmux', 'list-sessions', '-F', '#{session_name}']);
+  const r = spawnSync(c, a, { encoding: 'utf-8' });
+  if (r.status !== 0) return [];
+  return (r.stdout || '').split('\n')
+    .map(s => s.trim())
+    .filter(s => s.startsWith(`${TMUX_PREFIX}-`))
+    .map(s => s.slice(TMUX_PREFIX.length + 1));
+}
+
+export function killCliSession(id: string): void {
+  const [c, ...a] = asCliUser(['tmux', 'kill-session', '-t', `${TMUX_PREFIX}-${safeSessionId(id)}`]);
+  spawnSync(c, a, { stdio: 'ignore' });
+}
+
+// ── Global Claude auth (shared with pipelines via CLI_CLAUDE_CONFIG_DIR) ──
+export function cliAuthStatus(): { authenticated: boolean; method: string; loggedIn: boolean } {
+  const [c, ...a] = asCliUser(['claude', 'auth', 'status']);
+  const r = spawnSync(c, a, { encoding: 'utf-8' });
+  let loggedIn = false, method = 'none';
+  try { const j = JSON.parse((r.stdout || '').trim()); loggedIn = !!j.loggedIn; method = j.authMethod || 'none'; } catch { /* not logged in */ }
+  return { authenticated: loggedIn, method, loggedIn };
+}
+
+// In-flight `claude auth login` processes for the global CLI, keyed by sid.
+const cliLoginSessions = new Map<string, ChildProcess>();
+
+export function startCliLogin(): Promise<{ sessionId: string; url: string }> {
+  return new Promise((resolve, reject) => {
+    const [c, ...a] = asCliUser(['claude', 'auth', 'login', '--claudeai']);
+    const proc = spawn(c, a, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const sid = Math.random().toString(36).slice(2, 10);
+    let out = '', done = false;
+    const timer = setTimeout(() => { if (!done) { done = true; try { proc.kill(); } catch { /* ignore */ } reject(new Error('Timed out waiting for sign-in URL')); } }, 20000);
+    const onData = (d: Buffer) => {
+      out += d.toString();
+      const m = out.match(/https:\/\/\S*oauth\S*/);
+      if (m && !done) { done = true; clearTimeout(timer); cliLoginSessions.set(sid, proc); resolve({ sessionId: sid, url: m[0] }); }
+    };
+    proc.stdout?.on('data', onData);
+    proc.stderr?.on('data', onData);
+    proc.on('error', (e) => { if (!done) { done = true; clearTimeout(timer); reject(e); } });
+    proc.on('close', () => { if (!done) { done = true; clearTimeout(timer); reject(new Error('Sign-in process exited early')); } });
+  });
+}
+
+export async function submitCliLogin(sid: string, code: string): Promise<{ completed: boolean; authenticated: boolean; method: string; loggedIn: boolean }> {
+  const proc = cliLoginSessions.get(sid);
+  if (!proc) throw new Error('No active sign-in session');
+  try { proc.stdin?.write(code.trim() + '\n'); } catch { /* ignore */ }
+  const completed = await new Promise<boolean>((resolve) => {
+    const t = setTimeout(() => resolve(false), 25000);
+    proc.on('close', () => { clearTimeout(t); resolve(true); });
+  });
+  cliLoginSessions.delete(sid);
+  return { completed, ...cliAuthStatus() };
+}
 
 
 export function ensureSetup(): void {
@@ -58,6 +131,7 @@ set -g history-limit 50000
   // Backs off if claude exits too quickly (prevents tight loop on errors).
   const runner = `#!/bin/bash
 export HOME=${CLI_HOME}
+export CLAUDE_CONFIG_DIR=${CLI_CLAUDE_CONFIG_DIR}
 export BENDER_API=http://localhost:8080/api
 cd ${CLI_WORKSPACE}
 while true; do
@@ -142,18 +216,24 @@ export function attachCliServer(server: http.Server): void {
     });
   });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    // The tab's session id comes from ?session=<id>; each id is its own tmux
+    // session (so multiple tabs run independent claude conversations) but they
+    // all share the cli user's credentials, so auth is shared.
+    const q = new URLSearchParams((req.url || '').split('?')[1] || '');
+    const sessionName = `${TMUX_PREFIX}-${safeSessionId(q.get('session') || 'main')}`;
     // gosu into the cli user so claude (which refuses root) can run.
     // Using `env -i HOME=... PATH=...` to scrub inherited root env.
     const term = pty.spawn('gosu', [
       CLI_USER,
       'env',
       `HOME=${CLI_HOME}`,
+      `CLAUDE_CONFIG_DIR=${CLI_CLAUDE_CONFIG_DIR}`,
       'PATH=/usr/local/bin:/usr/bin:/bin',
       `BENDER_API=http://localhost:8080/api`,
       'TERM=xterm-256color',
       'tmux', 'new-session', '-A',
-      '-s', TMUX_SESSION,
+      '-s', sessionName,
       '-c', CLI_WORKSPACE,
       RUNNER,
     ], {

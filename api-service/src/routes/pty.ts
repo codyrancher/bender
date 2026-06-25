@@ -6,9 +6,31 @@ import { asyncHandler, HttpError } from '../utils/http';
 import { MAX_UPLOAD_SIZE } from '../config/cli';
 import {
   saveUpload, resolveUploadPath, readClaudeMd, writeClaudeMd, resetClaudeMd,
+  listCliSessions, killCliSession, cliAuthStatus, startCliLogin, submitCliLogin,
 } from '../services/cli';
 
 export function registerCliRoutes(app: Express): void {
+  // ── Terminal sessions (one tmux session per tab) ──
+  app.get('/api/cli/sessions', asyncHandler((_req, res) =>
+    res.json({ sessions: listCliSessions() })));
+
+  app.delete('/api/cli/sessions/:id', asyncHandler((req, res) => {
+    killCliSession(req.params.id);
+    res.json({ ok: true });
+  }));
+
+  // ── Global Claude auth (shared across terminal sessions + pipelines) ──
+  app.get('/api/cli/auth', asyncHandler((_req, res) => res.json(cliAuthStatus())));
+
+  app.post('/api/cli/auth/login', asyncHandler(async (_req, res) =>
+    res.json(await startCliLogin())));
+
+  app.post('/api/cli/auth/login/:sid', asyncHandler(async (req, res) => {
+    const code = (req.body?.code || '').trim();
+    if (!code) throw new HttpError(400, 'code is required');
+    res.json(await submitCliLogin(req.params.sid, code));
+  }));
+
   // Streamed upload — buffer the body (enforcing the size cap) then hand off.
   app.post('/api/cli/upload', (req: Request, res: Response) => {
     const chunks: Buffer[] = [];

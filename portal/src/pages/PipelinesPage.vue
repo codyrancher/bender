@@ -143,9 +143,9 @@ async function startRun(pipeline: string) {
   } catch {}
 }
 
-function onClaudeAuthed(pipeline: string) {
+function onClaudeAuthed(pipeline?: string) {
   claudeGate.value = null
-  startRun(pipeline)
+  if (pipeline) startRun(pipeline)
 }
 
 // Editing skills/pipelines happens in the Definitions editor pages; the Edit

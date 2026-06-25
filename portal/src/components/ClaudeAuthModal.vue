@@ -7,10 +7,12 @@ import { api } from '@/services/api'
 import Modal from './primitives/Modal.vue'
 import Button from './primitives/Button.vue'
 
-const props = defineProps<{ pipeline: string }>()
+// Either gates a pipeline run (`pipeline` set) or the global terminal (`global`).
+// Both sign into the same shared credentials, so one login covers everything.
+const props = defineProps<{ pipeline?: string; global?: boolean }>()
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'authenticated', pipeline: string): void
+  (e: 'authenticated', pipeline?: string): void
 }>()
 
 const url = ref<string>()
@@ -22,7 +24,7 @@ const error = ref('')
 async function fetchLoginLink() {
   loading.value = true; error.value = ''
   try {
-    const r = await api.startClaudeLogin(props.pipeline)
+    const r = props.global ? await api.startCliLogin() : await api.startClaudeLogin(props.pipeline!)
     url.value = r.url; sessionId.value = r.sessionId
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to get a sign-in link'
@@ -35,7 +37,9 @@ async function submitLoginCode() {
   if (!sessionId.value || !code.value.trim()) return
   loading.value = true; error.value = ''
   try {
-    const r = await api.completeClaudeLogin(props.pipeline, sessionId.value, code.value.trim())
+    const r = props.global
+      ? await api.completeCliLogin(sessionId.value, code.value.trim())
+      : await api.completeClaudeLogin(props.pipeline!, sessionId.value, code.value.trim())
     if (r.authenticated) {
       emit('authenticated', props.pipeline)
     } else {
@@ -50,9 +54,13 @@ async function submitLoginCode() {
 </script>
 
 <template>
-  <Modal title="Claude sign-in required" :subtitle="pipeline" @close="!loading && emit('close')">
+  <Modal title="Claude sign-in required" :subtitle="global ? 'Global terminal' : pipeline" @close="!loading && emit('close')">
     <div class="modal-pad">
-      <p class="auth-desc">
+      <p v-if="global" class="auth-desc">
+        The global Claude terminal isn't signed in. Sign in once — the same
+        credentials are shared across every terminal session and pipeline run.
+      </p>
+      <p v-else class="auth-desc">
         Pipeline stages run the Claude CLI inside the pipeline container, which isn't signed in.
         Sign in once — credentials are shared across all pipelines.
       </p>
@@ -86,7 +94,7 @@ async function submitLoginCode() {
         :disabled="loading || !code.trim()"
         @click="submitLoginCode"
       >
-        {{ loading ? 'Signing in…' : 'Complete sign-in & run' }}
+        {{ loading ? 'Signing in…' : (global ? 'Complete sign-in' : 'Complete sign-in & run') }}
       </Button>
     </template>
   </Modal>
