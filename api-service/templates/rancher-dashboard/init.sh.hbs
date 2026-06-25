@@ -139,17 +139,6 @@ if [ ! -d /workspace/dashboard ]; then
   # Auth uses the global env-based credential helper configured above
   # (reads $GITHUB_TOKEN at use-time); nothing repo-local to set here.
 
-  # Copy VS Code launch configurations
-  if [ -d /workspace/.vscode ]; then
-    cp -r /workspace/.vscode /workspace/dashboard/.vscode
-  fi
-
-  # Exclude harness-generated files from git
-  mkdir -p .git/info
-  cat > .git/info/exclude << 'GITEXCLUDE'
-.vscode/
-GITEXCLUDE
-
   # Install git pre-push hook (runs linter before pushing)
   mkdir -p .git/hooks
   cat > .git/hooks/pre-push << 'HOOK'
