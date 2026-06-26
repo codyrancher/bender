@@ -39,9 +39,15 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI (native binary)
-RUN CLAUDE_VERSION=$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest) \
-    && curl -fsSL -o /usr/local/bin/claude "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${CLAUDE_VERSION}/linux-x64/claude" \
+# Install Claude Code CLI (native binary) — pick the build matching the target arch
+RUN CLAUDE_ARCH=$(dpkg --print-architecture) \
+    && case "$CLAUDE_ARCH" in \
+         amd64) CLAUDE_PLATFORM=linux-x64 ;; \
+         arm64) CLAUDE_PLATFORM=linux-arm64 ;; \
+         *) echo "Unsupported architecture: $CLAUDE_ARCH" >&2; exit 1 ;; \
+       esac \
+    && CLAUDE_VERSION=$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest) \
+    && curl -fsSL -o /usr/local/bin/claude "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${CLAUDE_VERSION}/${CLAUDE_PLATFORM}/claude" \
     && chmod +x /usr/local/bin/claude
 
 # Install fnm (fast node manager) for per-project node version switching

@@ -14,15 +14,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # We reuse it as the non-root user for the global Claude CLI (claude refuses
 # to run as root).
 
-# Docker CLI (static binary — we don't need the daemon)
-RUN curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz \
+# Docker CLI (static binary — we don't need the daemon) — arch-matched
+RUN DOCKER_ARCH=$(dpkg --print-architecture) \
+    && case "$DOCKER_ARCH" in \
+         amd64) DOCKER_STATIC_ARCH=x86_64 ;; \
+         arm64) DOCKER_STATIC_ARCH=aarch64 ;; \
+         *) echo "Unsupported architecture: $DOCKER_ARCH" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_STATIC_ARCH}/docker-27.3.1.tgz" \
         | tar -xz -C /tmp \
     && mv /tmp/docker/docker /usr/local/bin/ \
     && rm -rf /tmp/docker
 
-# Claude Code CLI (linux-x64 native binary, glibc)
-RUN CLAUDE_VERSION=$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest) \
-    && curl -fsSL -o /usr/local/bin/claude "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${CLAUDE_VERSION}/linux-x64/claude" \
+# Claude Code CLI (native binary, glibc) — pick the build matching the target arch
+RUN CLAUDE_ARCH=$(dpkg --print-architecture) \
+    && case "$CLAUDE_ARCH" in \
+         amd64) CLAUDE_PLATFORM=linux-x64 ;; \
+         arm64) CLAUDE_PLATFORM=linux-arm64 ;; \
+         *) echo "Unsupported architecture: $CLAUDE_ARCH" >&2; exit 1 ;; \
+       esac \
+    && CLAUDE_VERSION=$(curl -fsSL https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest) \
+    && curl -fsSL -o /usr/local/bin/claude "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${CLAUDE_VERSION}/${CLAUDE_PLATFORM}/claude" \
     && chmod +x /usr/local/bin/claude
 
 COPY package*.json ./

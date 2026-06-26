@@ -3,6 +3,18 @@ FROM node:22-slim AS portal-build
 WORKDIR /build
 COPY portal/package*.json ./
 RUN npm ci
+# npm has a long-standing bug (npm/cli#4828) where `npm ci` silently skips the
+# platform-specific optional dep — rollup's native binary — when the lockfile was
+# generated on a different arch. Install the exact arch-matched binary (no-save,
+# so the lockfile is untouched); a no-op on the arch npm already resolved.
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+         amd64) ROLLUP_NATIVE=@rollup/rollup-linux-x64-gnu ;; \
+         arm64) ROLLUP_NATIVE=@rollup/rollup-linux-arm64-gnu ;; \
+         *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+       esac \
+    && ROLLUP_VERSION=$(node -p "require('./node_modules/rollup/package.json').version") \
+    && npm install --no-save "${ROLLUP_NATIVE}@${ROLLUP_VERSION}"
 COPY portal/ ./
 RUN npm run build
 
