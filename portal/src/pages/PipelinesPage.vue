@@ -305,6 +305,7 @@ function latestRun(pipeline: string): PipelineRun | null {
   flex: 1;
   display: flex;
   overflow: hidden;
+  min-height: 0;
 }
 
 .pipelines-list {
@@ -314,6 +315,7 @@ function latestRun(pipeline: string): PipelineRun | null {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
 }
 
 /* Empty state */
