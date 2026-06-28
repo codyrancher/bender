@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The global Claude CLI surface: a resizable Drawer hosting one or more terminal
 // tabs (each its own tmux/claude session, sharing auth), the CLAUDE.md editor,
-// and a sign-in gate. The last-active tab is restored when the drawer reopens.
+// and a sign-in gate. Tabs are nameable (double-click to rename); the tab set +
+// names + last-active tab are persisted and restored when the drawer reopens.
 import { ref, watch, nextTick } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { api } from '@/services/api'
@@ -10,6 +11,8 @@ import Terminal from './Terminal.vue'
 import ClaudeEditorModal from './ClaudeEditorModal.vue'
 import ClaudeAuthModal from './ClaudeAuthModal.vue'
 
+interface Tab { id: string; name: string }
+
 const ui = useUiStore()
 const showEditor = ref(false)
 
@@ -17,21 +20,25 @@ const TABS_KEY = 'bender.cli.tabs'
 const ACTIVE_KEY = 'bender.cli.active'
 const newId = () => Math.random().toString(36).slice(2, 8)
 
-// Tab session ids (in order) + the active one, both restored from localStorage.
-const tabs = ref<string[]>(loadTabs())
+const tabs = ref<Tab[]>(loadTabs())
 const activeId = ref<string>(loadActive())
 const termRefs = new Map<string, { fit: () => void }>()
 
-function loadTabs(): string[] {
+function loadTabs(): Tab[] {
   try {
-    const t = JSON.parse(localStorage.getItem(TABS_KEY) || '[]')
-    if (Array.isArray(t) && t.length) return t.filter((x) => typeof x === 'string')
+    const raw = JSON.parse(localStorage.getItem(TABS_KEY) || '[]')
+    if (Array.isArray(raw) && raw.length) {
+      // Migrate the old `string[]` (ids only) format → named tabs.
+      return raw.map((t, i): Tab =>
+        typeof t === 'string' ? { id: t, name: `Terminal ${i + 1}` }
+          : { id: String(t.id), name: String(t.name || `Terminal ${i + 1}`) })
+    }
   } catch { /* ignore */ }
-  return [newId()]
+  return [{ id: newId(), name: 'Terminal 1' }]
 }
 function loadActive(): string {
   const a = localStorage.getItem(ACTIVE_KEY) || ''
-  return tabs.value.includes(a) ? a : tabs.value[0]
+  return tabs.value.some((t) => t.id === a) ? a : tabs.value[0].id
 }
 function persist() {
   localStorage.setItem(TABS_KEY, JSON.stringify(tabs.value))
@@ -53,18 +60,36 @@ function setActive(id: string) {
 }
 function addTab() {
   const id = newId()
-  tabs.value.push(id)
+  tabs.value.push({ id, name: `Terminal ${tabs.value.length + 1}` })
   setActive(id)
 }
 async function closeTab(id: string) {
-  const idx = tabs.value.indexOf(id)
+  const idx = tabs.value.findIndex((t) => t.id === id)
   if (idx === -1) return
   tabs.value.splice(idx, 1)
   termRefs.delete(id)
   try { await api.closeCliSession(id) } catch { /* ignore */ }
   if (tabs.value.length === 0) { addTab(); return }
-  if (activeId.value === id) setActive(tabs.value[Math.min(idx, tabs.value.length - 1)])
+  if (activeId.value === id) setActive(tabs.value[Math.min(idx, tabs.value.length - 1)].id)
   else persist()
+}
+
+// --- Inline rename (double-click a tab) ---
+const editingId = ref<string | null>(null)
+const draft = ref('')
+const renameInput = ref<HTMLInputElement | null>(null)
+
+function startRename(tab: Tab) {
+  editingId.value = tab.id
+  draft.value = tab.name
+  nextTick(() => renameInput.value?.select())
+}
+function commitRename(tab: Tab) {
+  if (editingId.value !== tab.id) return
+  const n = draft.value.trim()
+  if (n) tab.name = n
+  editingId.value = null
+  persist()
 }
 
 // --- Sign-in gate (shared auth for every tab + pipeline runs) ---
@@ -76,10 +101,12 @@ watch(() => ui.terminalOpen, async (open) => {
   if (!open) return
   if (!opened) {
     opened = true
-    // Merge any live server-side sessions (e.g. created in another tab) in.
+    // Merge any live server-side sessions (e.g. created elsewhere) in.
     try {
       const r = await api.getCliSessions()
-      for (const id of r.sessions) if (!tabs.value.includes(id)) tabs.value.push(id)
+      for (const id of r.sessions) {
+        if (!tabs.value.some((t) => t.id === id)) tabs.value.push({ id, name: `Terminal ${tabs.value.length + 1}` })
+      }
       persist()
     } catch { /* ignore */ }
     try {
@@ -95,26 +122,37 @@ watch(() => ui.terminalOpen, async (open) => {
   <Drawer :open="ui.terminalOpen">
     <div class="cli">
       <div class="cli-tabs">
-        <button
-          v-for="(id, i) in tabs"
-          :key="id"
+        <div
+          v-for="tab in tabs"
+          :key="tab.id"
           class="cli-tab"
-          :class="{ active: id === activeId }"
-          @click="setActive(id)"
+          :class="{ active: tab.id === activeId }"
+          @click="setActive(tab.id)"
+          @dblclick="startRename(tab)"
         >
-          <span>Terminal {{ i + 1 }}</span>
-          <span class="cli-tab-close" title="Close" @click.stop="closeTab(id)">&times;</span>
-        </button>
+          <input
+            v-if="editingId === tab.id"
+            ref="renameInput"
+            v-model="draft"
+            class="cli-tab-input"
+            @click.stop
+            @blur="commitRename(tab)"
+            @keydown.enter.prevent="commitRename(tab)"
+            @keydown.esc.prevent="editingId = null"
+          />
+          <span v-else class="cli-tab-name" title="Double-click to rename">{{ tab.name }}</span>
+          <span class="cli-tab-close" title="Close" @click.stop="closeTab(tab.id)">&times;</span>
+        </div>
         <button class="cli-tab-add" title="New terminal" @click="addTab">+</button>
       </div>
 
       <div v-if="authChecked && !needAuth" class="cli-terms">
         <Terminal
-          v-for="id in tabs"
-          v-show="id === activeId"
-          :key="id"
-          :ref="(el: any) => setTermRef(id, el)"
-          :session="id"
+          v-for="tab in tabs"
+          v-show="tab.id === activeId"
+          :key="tab.id"
+          :ref="(el: any) => setTermRef(tab.id, el)"
+          :session="tab.id"
           @open-editor="showEditor = true"
         />
       </div>
@@ -158,10 +196,8 @@ watch(() => ui.terminalOpen, async (open) => {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-family: inherit;
   font-size: var(--font-size-xs);
   cursor: pointer;
   border-bottom: 2px solid transparent;
@@ -171,6 +207,20 @@ watch(() => ui.terminalOpen, async (open) => {
 .cli-tab.active {
   color: var(--color-text-primary);
   border-bottom-color: var(--color-accent);
+}
+
+.cli-tab-name { user-select: none; white-space: nowrap; }
+
+.cli-tab-input {
+  width: 90px;
+  background: var(--color-bg-primary);
+  border: var(--border-width-sm) solid var(--color-accent);
+  border-radius: var(--radius-xs);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-xs);
+  padding: 1px 4px;
+  outline: none;
 }
 
 .cli-tab-close {
