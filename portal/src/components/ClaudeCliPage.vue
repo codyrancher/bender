@@ -107,7 +107,7 @@ watch(() => ui.terminalOpen, async (open) => {
   if (!open) return
   if (!opened) {
     opened = true
-    // Merge any live server-side sessions (e.g. created elsewhere) in.
+    // Merge any live server-side sessions (e.g. created elsewhere) in — once.
     try {
       const r = await api.getCliSessions()
       for (const id of r.sessions) {
@@ -115,11 +115,13 @@ watch(() => ui.terminalOpen, async (open) => {
       }
       persist()
     } catch { /* ignore */ }
-    try {
-      needAuth.value = !(await api.getCliAuth()).authenticated
-    } catch { needAuth.value = false }
-    authChecked.value = true
   }
+  // Re-check auth on EVERY open so a session that expired or was signed out
+  // (e.g. via another tab/pipeline) re-prompts instead of silently failing.
+  try {
+    needAuth.value = !(await api.getCliAuth()).authenticated
+  } catch { needAuth.value = false }
+  authChecked.value = true
   fitActive()
 })
 </script>
