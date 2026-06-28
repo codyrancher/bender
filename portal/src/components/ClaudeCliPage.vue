@@ -10,6 +10,7 @@ import Drawer from './Drawer.vue'
 import Terminal from './Terminal.vue'
 import ClaudeEditorModal from './ClaudeEditorModal.vue'
 import ClaudeAuthModal from './ClaudeAuthModal.vue'
+import EditIcon from '@/assets/icons/edit.svg?component'
 
 interface Tab { id: string; name: string }
 
@@ -74,15 +75,20 @@ async function closeTab(id: string) {
   else persist()
 }
 
-// --- Inline rename (double-click a tab) ---
+// --- Rename (double-click a tab, or right-click → Rename) ---
 const editingId = ref<string | null>(null)
 const draft = ref('')
-const renameInput = ref<HTMLInputElement | null>(null)
 
 function startRename(tab: Tab) {
   editingId.value = tab.id
   draft.value = tab.name
-  nextTick(() => renameInput.value?.select())
+  // The input lives inside a v-for, so a template ref would be an array — just
+  // grab the single rendered input and focus/select it.
+  nextTick(() => {
+    const el = document.querySelector('.cli-tab-input') as HTMLInputElement | null
+    el?.focus()
+    el?.select()
+  })
 }
 function commitRename(tab: Tab) {
   if (editingId.value !== tab.id) return
@@ -132,7 +138,6 @@ watch(() => ui.terminalOpen, async (open) => {
         >
           <input
             v-if="editingId === tab.id"
-            ref="renameInput"
             v-model="draft"
             class="cli-tab-input"
             @click.stop
@@ -140,7 +145,12 @@ watch(() => ui.terminalOpen, async (open) => {
             @keydown.enter.prevent="commitRename(tab)"
             @keydown.esc.prevent="editingId = null"
           />
-          <span v-else class="cli-tab-name" title="Double-click to rename">{{ tab.name }}</span>
+          <template v-else>
+            <span class="cli-tab-name">{{ tab.name }}</span>
+            <button class="cli-tab-edit" title="Rename" @click.stop="startRename(tab)">
+              <EditIcon />
+            </button>
+          </template>
           <span class="cli-tab-close" title="Close" @click.stop="closeTab(tab.id)">&times;</span>
         </div>
         <button class="cli-tab-add" title="New terminal" @click="addTab">+</button>
@@ -210,6 +220,21 @@ watch(() => ui.terminalOpen, async (open) => {
 }
 
 .cli-tab-name { user-select: none; white-space: nowrap; }
+
+.cli-tab-edit {
+  display: flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 0 1px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+.cli-tab-edit svg { width: 11px; height: 11px; }
+.cli-tab:hover .cli-tab-edit { opacity: 0.6; }
+.cli-tab-edit:hover { opacity: 1 !important; color: var(--color-text-primary); }
 
 .cli-tab-input {
   width: 90px;
