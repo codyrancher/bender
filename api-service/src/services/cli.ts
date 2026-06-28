@@ -118,10 +118,10 @@ export function ensureSetup(): void {
 
   // tmux config: mouse off (xterm.js handles selection/scrollback), 50k scrollback.
   const tmuxConfPath = path.join(CLI_HOME, '.tmux.conf');
-  const tmuxConf = `# Mouse off — xterm.js handles selection and scrollback natively (10k lines).
-# Keeping mouse off prevents tmux copy-mode from hijacking drag-select and
-# deselecting on mouseup.
-set -g mouse off
+  const tmuxConf = `# Mouse on so the scroll wheel scrolls tmux's 50k-line scrollback (it enters
+# copy-mode automatically and exits at the bottom). Hold Shift to drag-select
+# with xterm.js instead of tmux.
+set -g mouse on
 set -g history-limit 50000
 `;
   fs.writeFileSync(tmuxConfPath, tmuxConf);

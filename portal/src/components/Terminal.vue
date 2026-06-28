@@ -203,7 +203,8 @@ onMounted(() => {
   })
 
   term.onData((data) => {
-    if (data.startsWith('\x1b[M') || data.startsWith('\x1b[<')) return
+    // Forward everything (including mouse events) so tmux mouse mode can scroll
+    // the wheel through its scrollback.
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'input', data }))
     }
