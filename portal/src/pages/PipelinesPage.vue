@@ -5,7 +5,6 @@ import { usePipelinesStore } from '@/stores/pipelines'
 import { useUiStore } from '@/stores/ui'
 import { api } from '@/services/api'
 import type { PipelineRun } from '@/types'
-import { runNo } from '@/utils/pipelineFormat'
 import PipelineCard from '../components/PipelineCard.vue'
 import StageDetailModal from '../components/StageDetailModal.vue'
 import CreatePipelineModal from '../components/CreatePipelineModal.vue'
@@ -181,15 +180,6 @@ const stageDetail = computed(() => {
   return { pipeline: sel.pipeline, stageIndex: sel.stageIndex, defStage, record, run }
 })
 
-// Read-only snapshot of pipeline.yaml as it was when a run started
-function viewPipelineMd(pipeline: string, run: PipelineRun) {
-  viewers.value?.openFile({
-    name: 'pipeline.yaml',
-    url: `/api/pipelines/${pipeline}/runs/${run.id}/pipeline-md`,
-    subtitle: `run #${runNo(run)} · read-only snapshot`,
-  })
-}
-
 function latestRun(pipeline: string): PipelineRun | null {
   const runs = pipelineRuns.value[pipeline]
   return runs?.length ? runs[0] : null
@@ -222,7 +212,6 @@ function latestRun(pipeline: string): PipelineRun | null {
           @run="toggleRun(pl.name, $event)"
           @rerun="rerunStageAsNew(pl.name, $event)"
           @select-stage="selectStage(pl.name, $event.stageIndex, $event.runId)"
-          @view-pipeline-md="viewPipelineMd(pl.name, $event)"
         />
 
         <div v-if="!pipelines.length" class="empty-state">

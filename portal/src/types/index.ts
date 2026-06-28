@@ -107,4 +107,15 @@ export interface CreatePipelineResponse {
   error?: string
 }
 
+// One distinct version of a stage's SKILL.md, spanning the consecutive runs that
+// shared the same text (see GET /pipelines/:name/stages/:stageName/skill-history).
+export interface SkillVersion {
+  skillMd: string
+  firstRunId: number
+  firstRunNumber: number
+  lastRunNumber: number
+  runCount: number
+  started_at: string | null
+}
+
 

@@ -2,16 +2,16 @@
 // One pipeline in the list: header actions, the stage graph (with live status +
 // rerun affordance) + Run/Cancel button, and expandable run history. Derives its
 // run-display state from props; all user actions are emitted to the page.
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Pipeline, PipelineStage, PipelineStageRecord, PipelineRun } from '@/types'
 import PipelineGraph from './PipelineGraph.vue'
+import StageHistory from './StageHistory.vue'
 import IconButton from './primitives/IconButton.vue'
 import EditIcon from '@/assets/icons/edit.svg?component'
 import HistoryIcon from '@/assets/icons/history.svg?component'
 import SlidersIcon from '@/assets/icons/sliders.svg?component'
 import TrashIcon from '@/assets/icons/trash.svg?component'
 import RerunIcon from '@/assets/icons/rerun.svg?component'
-import FileLinesIcon from '@/assets/icons/file-lines.svg?component'
 import {
   statusColor, stageStatusColor, stageStatusIcon, liveStageDuration, runNo, formatTime, runDuration,
 } from '@/utils/pipelineFormat'
@@ -31,10 +31,27 @@ const emit = defineEmits<{
   (e: 'run', event: Event): void
   (e: 'rerun', stageIndex: number): void
   (e: 'select-stage', sel: { stageIndex: number; runId: number | null }): void
-  (e: 'view-pipeline-md', run: PipelineRun): void
 }>()
 
+// Inline per-stage history panel (toggled by the history affordance on a node).
+// Only one history drawer is open at a time: opening a stage history closes the
+// run history, and opening the run history closes the stage history.
+const historyStage = ref<{ index: number; name: string } | null>(null)
+function toggleHistory(index: number, name: string) {
+  const willOpen = historyStage.value?.index !== index
+  historyStage.value = willOpen ? { index, name } : null
+  if (willOpen && props.expanded) emit('toggle-history') // close run history
+}
+watch(() => props.expanded, (open) => { if (open) historyStage.value = null })
+
 const argEntries = computed(() => Object.entries(props.pipeline.args || {}))
+
+// A rerun replays its preceding stages verbatim (copied from the source run, with
+// their original timing). Those carried-over stages started before THIS run did,
+// so we don't show their runtime — only the stages that actually ran this run.
+function isCarried(run: PipelineRun, stage: PipelineStageRecord): boolean {
+  return !!(run.started_at && stage.started_at && stage.started_at < run.started_at)
+}
 
 const latestRun = computed<PipelineRun | null>(() => props.runs.length ? props.runs[0] : null)
 
@@ -132,6 +149,15 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
               title="Success criteria met"
             >✓</div>
             <button
+              v-if="runs.length"
+              class="stage-history-btn"
+              :class="{ active: historyStage?.index === index }"
+              title="Stage history — runs &amp; skill changes"
+              @click.stop="toggleHistory(index, stage.name)"
+            >
+              <HistoryIcon width="12" height="12" />
+            </button>
+            <button
               v-if="canRerunStages && displayStages[index]"
               class="stage-rerun-btn"
               title="Rerun from this stage (new run, preceding stages kept)"
@@ -155,6 +181,18 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
       >{{ isRunActive ? '■ Cancel' : '▶ Run' }}</button>
     </div>
 
+    <!-- Inline per-stage history -->
+    <StageHistory
+      v-if="historyStage"
+      :pipeline="pipeline.name"
+      :stage-name="historyStage.name"
+      :stage-index="historyStage.index"
+      :runs="runs"
+      :now="now"
+      @close="historyStage = null"
+      @select-stage="emit('select-stage', $event)"
+    />
+
     <!-- Expanded run history -->
     <div v-if="expanded" class="run-history">
       <div class="run-history-header">
@@ -172,14 +210,6 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
           <div class="run-status-dot" :style="{ background: statusColor(run.status) }"></div>
           <span class="run-id">#{{ runNo(run) }}</span>
           <span class="run-status-text" :class="run.status">{{ run.status }}</span>
-          <button
-            class="run-md-btn"
-            title="View pipeline.yaml as it was for this run"
-            @click.stop="emit('view-pipeline-md', run)"
-          >
-            <FileLinesIcon width="11" height="11" />
-            pipeline.yaml
-          </button>
           <span class="run-time">{{ formatTime(run.started_at) }}</span>
           <span class="run-duration">{{ runDuration(run, now) }}</span>
         </div>
@@ -188,13 +218,18 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
             v-for="stage in run.stages"
             :key="stage.id"
             class="run-stage-row"
+            :class="{ 'dim-stage': isCarried(run, stage) || !stage.started_at }"
             @click="emit('select-stage', { stageIndex: stage.stage_index, runId: run.id })"
           >
             <div class="run-stage-status" :style="{ color: stageStatusColor(stage.status) }">
               {{ stageStatusIcon(stage.status) }}
             </div>
             <span class="run-stage-name">{{ stage.stage_name }}</span>
-            <span class="run-stage-duration">{{ liveStageDuration(stage, now) }}</span>
+            <span
+              class="run-stage-duration"
+              :class="{ carried: isCarried(run, stage) }"
+              :title="isCarried(run, stage) ? 'Carried over from a previous run — not re-run' : ''"
+            >{{ isCarried(run, stage) ? 'carried' : liveStageDuration(stage, now) }}</span>
             <span
               v-if="stage.success_criteria"
               class="run-criteria"
@@ -218,7 +253,6 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border-dark);
   border-radius: 8px;
-  overflow: hidden;
   transition: border-color 0.15s, opacity 0.2s;
 }
 
@@ -485,6 +519,42 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   transform: rotate(-30deg);
 }
 
+/* Stage-history affordance — top-left corner, mirroring the rerun button. */
+.stage-history-btn {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-bg-element);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+  z-index: 3;
+}
+
+.node-stage:hover .stage-history-btn {
+  opacity: 1;
+}
+
+.stage-history-btn:hover,
+.stage-history-btn.active {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-bg-element-hover);
+}
+
+.stage-history-btn.active {
+  opacity: 1;
+}
+
 /* Run history */
 .run-history {
   border-top: 1px solid var(--color-border-dark);
@@ -556,27 +626,6 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
 .run-status-text.pending { color: var(--color-status-default); }
 .run-status-text.cancelled { color: var(--color-warning); }
 
-.run-md-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-medium);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 10px;
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  margin-left: 4px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.run-md-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
 
 .run-time {
   font-size: 11px;
@@ -606,6 +655,13 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   background: var(--color-bg-tertiary);
 }
 
+/* Stages that didn't run this run — carried over from a previous run, or never
+   started (pending / cancelled before reaching them) — are dimmed so the
+   actually-run stages stand out. */
+.run-stage-row.dim-stage {
+  opacity: 0.25;
+}
+
 .run-stage-status {
   font-size: 12px;
   font-weight: 700;
@@ -624,6 +680,10 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   color: var(--color-text-muted);
   font-size: 11px;
   min-width: 40px;
+}
+
+.run-stage-duration.carried {
+  font-style: italic;
 }
 
 .run-criteria {

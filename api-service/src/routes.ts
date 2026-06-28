@@ -564,6 +564,48 @@ export function registerRoutes(app: Express): void {
     }
   });
 
+  // History of a single stage's SKILL.md across every run of the pipeline,
+  // grouped into distinct consecutive versions (carried-over reruns share the
+  // same text, so they collapse into one version). The client diffs consecutive
+  // versions to show how the skill evolved.
+  app.get('/api/pipelines/:name/stages/:stageName/skill-history', (req: Request, res: Response) => {
+    try {
+      const db = getRunsDb();
+      const name = req.params.name;
+      const uid = pipelineUid(name);
+      const rows = db.prepare(
+        `SELECT sr.skill_md AS skill_md, sr.run_id AS run_id, r.started_at AS started_at,
+           (SELECT COUNT(*) FROM pipeline_runs r2 WHERE r2.pipeline = r.pipeline AND r2.pipeline_uid IS r.pipeline_uid AND r2.id <= r.id) AS run_number
+         FROM pipeline_stage_records sr
+         JOIN pipeline_runs r ON r.id = sr.run_id
+         WHERE r.pipeline = ? AND r.pipeline_uid IS ? AND sr.stage_name = ?
+         ORDER BY sr.run_id ASC`
+      ).all(name, uid, req.params.stageName) as Array<{ skill_md: string | null; run_id: number; started_at: string | null; run_number: number }>;
+
+      // Collapse consecutive runs that share identical skill text into one version.
+      const versions: Array<{
+        skillMd: string; firstRunId: number; firstRunNumber: number;
+        lastRunNumber: number; runCount: number; started_at: string | null;
+      }> = [];
+      for (const r of rows) {
+        const text = r.skill_md || '';
+        const last = versions[versions.length - 1];
+        if (last && last.skillMd === text) {
+          last.lastRunNumber = r.run_number;
+          last.runCount += 1;
+        } else {
+          versions.push({
+            skillMd: text, firstRunId: r.run_id, firstRunNumber: r.run_number,
+            lastRunNumber: r.run_number, runCount: 1, started_at: r.started_at,
+          });
+        }
+      }
+      res.json({ stageName: req.params.stageName, versions });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   app.post('/api/pipelines/:name/runs', (req: Request, res: Response) => {
     try {
       const db = getRunsDb();

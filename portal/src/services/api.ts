@@ -5,6 +5,7 @@ import type {
   PipelineRun,
   PipelineStage,
   PipelineArg,
+  SkillVersion,
 } from '@/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -269,6 +270,11 @@ export const api = {
 
   async getPipelineRuns(pipeline: string, limit = 20, offset = 0): Promise<{ runs: PipelineRun[]; total: number }> {
     return fetchJSON(`${API_BASE}/pipelines/${pipeline}/runs?limit=${limit}&offset=${offset}`)
+  },
+
+  // Distinct SKILL.md versions of a stage across all runs (oldest → newest).
+  async getStageSkillHistory(pipeline: string, stageName: string): Promise<{ stageName: string; versions: SkillVersion[] }> {
+    return fetchJSON(`${API_BASE}/pipelines/${pipeline}/stages/${encodeURIComponent(stageName)}/skill-history`)
   },
 
   async createPipelineRun(pipeline: string): Promise<{ run: PipelineRun }> {
