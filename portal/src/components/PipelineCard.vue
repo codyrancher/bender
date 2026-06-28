@@ -6,6 +6,9 @@ import { computed, ref, watch } from 'vue'
 import type { Pipeline, PipelineStage, PipelineStageRecord, PipelineRun } from '@/types'
 import PipelineGraph from './PipelineGraph.vue'
 import StageHistory from './StageHistory.vue'
+import HistoryDrawer from './HistoryDrawer.vue'
+import HistoryCard from './HistoryCard.vue'
+import StageRow from './StageRow.vue'
 import IconButton from './primitives/IconButton.vue'
 import EditIcon from '@/assets/icons/edit.svg?component'
 import HistoryIcon from '@/assets/icons/history.svg?component'
@@ -13,7 +16,7 @@ import SlidersIcon from '@/assets/icons/sliders.svg?component'
 import TrashIcon from '@/assets/icons/trash.svg?component'
 import RerunIcon from '@/assets/icons/rerun.svg?component'
 import {
-  statusColor, stageStatusColor, stageStatusIcon, liveStageDuration, runNo, formatTime, runDuration,
+  statusColor, stageStatusColor, liveStageDuration, runNo, formatTime, runDuration,
 } from '@/utils/pipelineFormat'
 
 const props = defineProps<{
@@ -194,57 +197,31 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
     />
 
     <!-- Expanded run history -->
-    <div v-if="expanded" class="run-history">
-      <div class="run-history-header">
-        <span class="run-history-title">Run History</span>
-      </div>
-      <div v-if="!runs.length" class="no-runs">
-        No runs recorded yet
-      </div>
-      <div
-        v-for="run in runs"
-        :key="run.id"
-        class="run-record"
-      >
-        <div class="run-summary">
+    <HistoryDrawer v-if="expanded" title="Run History" closable @close="emit('toggle-history')">
+      <div v-if="!runs.length" class="no-runs">No runs recorded yet</div>
+      <HistoryCard v-for="run in runs" :key="run.id">
+        <template #head>
           <div class="run-status-dot" :style="{ background: statusColor(run.status) }"></div>
           <span class="run-id">#{{ runNo(run) }}</span>
           <span class="run-status-text" :class="run.status">{{ run.status }}</span>
           <span class="run-time">{{ formatTime(run.started_at) }}</span>
           <span class="run-duration">{{ runDuration(run, now) }}</span>
-        </div>
+        </template>
         <div class="run-stages">
-          <div
+          <StageRow
             v-for="stage in run.stages"
             :key="stage.id"
-            class="run-stage-row"
-            :class="{ 'dim-stage': isCarried(run, stage) || !stage.started_at }"
+            :record="stage"
+            :now="now"
+            :carried="isCarried(run, stage)"
+            :dim="isCarried(run, stage) || !stage.started_at"
             @click="emit('select-stage', { stageIndex: stage.stage_index, runId: run.id })"
           >
-            <div class="run-stage-status" :style="{ color: stageStatusColor(stage.status) }">
-              {{ stageStatusIcon(stage.status) }}
-            </div>
-            <span class="run-stage-name">{{ stage.stage_name }}</span>
-            <span
-              class="run-stage-duration"
-              :class="{ carried: isCarried(run, stage) }"
-              :title="isCarried(run, stage) ? 'Carried over from a previous run — not re-run' : ''"
-            >{{ isCarried(run, stage) ? 'carried' : liveStageDuration(stage, now) }}</span>
-            <span
-              v-if="stage.success_criteria"
-              class="run-criteria"
-              :class="{ met: stage.success_criteria_met, unmet: !stage.success_criteria_met && (stage.status === 'completed' || stage.status === 'failed') }"
-              :title="stage.success_criteria"
-            >
-              {{ stage.success_criteria_met ? '✓ criteria met' : (stage.status === 'completed' || stage.status === 'failed' ? '✕ criteria not met' : 'pending') }}
-            </span>
-            <span v-if="stage.error" class="run-stage-error" :title="stage.error">
-              {{ stage.error }}
-            </span>
-          </div>
+            <template #label>{{ stage.stage_name }}</template>
+          </StageRow>
         </div>
-      </div>
-    </div>
+      </HistoryCard>
+    </HistoryDrawer>
   </div>
 </template>
 
@@ -556,48 +533,10 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
 }
 
 /* Run history */
-.run-history {
-  border-top: 1px solid var(--color-border-dark);
-  padding: 12px 20px 16px;
-  background: var(--color-bg-primary);
-}
-
-.run-history-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.run-history-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 .no-runs {
   font-size: 12px;
   color: var(--color-text-muted);
   padding: 8px 0;
-}
-
-.run-record {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border-dark);
-  border-radius: 6px;
-  margin-bottom: 8px;
-  overflow: hidden;
-}
-
-.run-record:last-child { margin-bottom: 0; }
-
-.run-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--color-border-dark);
 }
 
 .run-status-dot {
@@ -639,78 +578,5 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   font-weight: 500;
 }
 
-.run-stages { padding: 4px 0; }
-
-.run-stage-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.run-stage-row:hover {
-  background: var(--color-bg-tertiary);
-}
-
-/* Stages that didn't run this run — carried over from a previous run, or never
-   started (pending / cancelled before reaching them) — are dimmed so the
-   actually-run stages stand out. */
-.run-stage-row.dim-stage {
-  opacity: 0.25;
-}
-
-.run-stage-status {
-  font-size: 12px;
-  font-weight: 700;
-  width: 16px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.run-stage-name {
-  color: var(--color-text-primary);
-  font-weight: 500;
-  min-width: 80px;
-}
-
-.run-stage-duration {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  min-width: 40px;
-}
-
-.run-stage-duration.carried {
-  font-style: italic;
-}
-
-.run-criteria {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  white-space: nowrap;
-  color: var(--color-text-muted);
-}
-
-.run-criteria.met {
-  color: var(--color-status-running);
-  background: rgba(91, 168, 160, 0.12);
-}
-
-.run-criteria.unmet {
-  color: var(--color-error);
-  background: rgba(232, 88, 88, 0.12);
-}
-
-.run-stage-error {
-  color: var(--color-error);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-  margin-left: auto;
-}
+.run-stages { padding: 4px 0; border-top: 1px solid var(--color-border-dark); }
 </style>
