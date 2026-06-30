@@ -37,6 +37,12 @@ This project is for issue https://github.com/rancher/dashboard/issues/{{issueNum
 # Writing style
 - Never use em dashes in any output: code, comments, commit messages, PR descriptions, or chat replies. Use a regular dash, parentheses, or split the sentence instead.
 
+# Spawning another pipeline
+- You can create and start a separate pipeline from this stage with the `spawn-pipeline` tool. Use it only to hand off independent follow-up work that should run as its own pipeline.
+- `spawn-pipeline list` shows the available pipeline definitions and their arguments.
+- `spawn-pipeline create --definition <id> --label "..." --arg KEY=VALUE` creates one, sets its arguments, and starts a run (repeat `--arg` per argument; add `--no-start` to skip the run).
+- The pipeline you create is automatically tagged as spawned by this pipeline (creator pipeline/run/stage), so the lineage is tracked. Do not pass creator info yourself.
+
 # Fix Issue
 - Review the issue and attempt to solve it.
 - **Before using the browser (playwright/CDP) or hitting Rancher, run `wait-for-sidecars`.** The sidecar containers may

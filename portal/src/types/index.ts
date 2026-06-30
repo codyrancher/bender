@@ -80,6 +80,8 @@ export interface Pipeline {
   browserPort?: number
   browserHost?: string
   stages?: PipelineStage[]
+  // Set when another pipeline's stage agent spawned this one (spawn-pipeline tool).
+  createdBy?: { pipeline: string; runId?: number; stage?: string }
 }
 
 export interface Toast {

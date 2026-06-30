@@ -1,0 +1,96 @@
+#!/bin/bash
+# spawn-pipeline - create and start another pipeline from this stage.
+#
+# Usage:
+#   spawn-pipeline list
+#       List the available pipeline definitions and their arguments.
+#
+#   spawn-pipeline create --definition <id> [--label "..."] \
+#                         [--arg KEY=VALUE]... [--no-start]
+#       Create a pipeline from a definition, set its arguments, and start a run.
+#       Repeat --arg once per argument. --no-start creates it without running.
+#
+# The pipeline you create is tagged as spawned by THIS pipeline/run (visible in
+# the portal), so the lineage is tracked automatically. Use it to kick off
+# independent follow-up work that should run as its own pipeline.
+set -eo pipefail
+
+API="${HARNESS_API:-http://api:8080/api}"
+
+die() { echo "spawn-pipeline: $*" >&2; exit 1; }
+usage() { sed -n '2,16p' "$0" | sed 's/^#\{0,1\} \{0,1\}//'; }
+
+cmd="${1:-}"; shift 2>/dev/null || true
+
+case "$cmd" in
+  list)
+    curl -fsS "$API/definitions" | node -e '
+      let s=""; process.stdin.on("data",c=>s+=c).on("end",()=>{
+        let j; try { j=JSON.parse(s); } catch { console.error("bad response from API"); process.exit(1); }
+        const defs = Array.isArray(j) ? j : (j.definitions || []);
+        if (!defs.length) { console.log("(no definitions available)"); return; }
+        for (const d of defs) {
+          const args = (d.args || []).map(a => a.name + (a.required ? "*" : "")).join(", ") || "none";
+          console.log(`${d.id}\n    args: ${args}`);
+        }
+        console.log("\n(* = required)");
+      });'
+    ;;
+
+  create)
+    DEF=""; LABEL=""; START=1; ARGS=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --definition|-d) DEF="$2"; shift 2;;
+        --label|-l)      LABEL="$2"; shift 2;;
+        --arg|-a)        ARGS+=("$2"); shift 2;;
+        --no-start)      START=0; shift;;
+        *) die "unknown option: $1 (see: spawn-pipeline create --help)";;
+      esac
+    done
+    [ -n "$DEF" ] || die "create requires --definition <id> (run: spawn-pipeline list)"
+
+    # Unique, slug-safe instance name derived from the definition id.
+    NAME="${DEF}-$(tr -dc 'a-z0-9' </dev/urandom | head -c6)"
+
+    BODY=$(NAME="$NAME" DEF="$DEF" LABEL="$LABEL" \
+           PARENT="${BENDER_PIPELINE:-$HARNESS_PROJECT}" \
+           RUN_ID="${BENDER_RUN_ID:-}" STAGE="${BENDER_STAGE_NAME:-}" \
+           node -e '
+      const args = {};
+      for (const kv of process.argv.slice(1)) {
+        const i = kv.indexOf("=");
+        if (i < 1) { console.error("bad --arg (expected KEY=VALUE): " + kv); process.exit(1); }
+        args[kv.slice(0, i)] = kv.slice(i + 1);
+      }
+      const e = process.env;
+      const createdBy = e.PARENT ? { pipeline: e.PARENT } : null;
+      if (createdBy && e.RUN_ID) createdBy.runId = Number(e.RUN_ID);
+      if (createdBy && e.STAGE) createdBy.stage = e.STAGE;
+      const body = {
+        name: e.NAME,
+        definitionId: e.DEF,
+        startSidecars: false,            // child starts its own sidecars on demand
+        ...(e.LABEL ? { label: e.LABEL } : {}),
+        ...(Object.keys(args).length ? { args } : {}),
+        ...(createdBy ? { createdBy } : {}),
+      };
+      process.stdout.write(JSON.stringify(body));
+    ' "${ARGS[@]}")
+
+    echo "spawn-pipeline: creating '$NAME' from definition '$DEF'..." >&2
+    curl -fsS -X POST "$API/pipelines" -H 'Content-Type: application/json' -d "$BODY" >/dev/null \
+      || die "failed to create pipeline"
+
+    if [ "$START" -eq 1 ]; then
+      curl -fsS -X POST "$API/pipelines/$NAME/runs" >/dev/null \
+        || die "created '$NAME' but failed to start a run"
+      echo "Created and started pipeline: $NAME"
+    else
+      echo "Created pipeline (not started): $NAME"
+    fi
+    ;;
+
+  ""|-h|--help|help) usage;;
+  *) die "unknown command: '$cmd' (try: spawn-pipeline --help)";;
+esac

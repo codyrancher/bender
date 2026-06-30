@@ -4,6 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import { PIPELINES_DIR } from '../config/constants';
 
+// Lineage tag set when another pipeline's stage agent spawned this pipeline via
+// the `spawn-pipeline` tool, so the portal can show "spawned by <pipeline>".
+export interface CreatedBy {
+  pipeline: string;
+  runId?: number;
+  stage?: string;
+}
+
 export interface BenderJson {
   template?: string;
   // The pipeline-definition id this instance was created from (if any). Used to
@@ -18,6 +26,7 @@ export interface BenderJson {
   browserHost?: string;
   vars?: Record<string, string>;
   args?: Record<string, string>;
+  createdBy?: CreatedBy;
 }
 
 export function readBenderJson(project: string): BenderJson | null {

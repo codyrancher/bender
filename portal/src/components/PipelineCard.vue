@@ -100,6 +100,11 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
     <div class="pipeline-header">
       <div class="pipeline-name-row">
         <span class="pipeline-name">{{ pipeline.label || pipeline.name }}</span>
+        <span
+          v-if="pipeline.createdBy"
+          class="spawned-badge"
+          :title="`Spawned by ${pipeline.createdBy.pipeline}${pipeline.createdBy.stage ? ' · ' + pipeline.createdBy.stage : ''}`"
+        >↳ spawned by {{ pipeline.createdBy.pipeline }}</span>
         <span v-if="pipeline.status === 'deleting'" class="deleting-badge">
           <span class="deleting-spinner"></span> Deleting…
         </span>
@@ -273,6 +278,16 @@ const displayStages = computed<PipelineStageRecord[]>(() => {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
+}
+
+.spawned-badge {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: var(--color-bg-element);
+  border: 1px solid var(--color-border-dark);
+  border-radius: 4px;
+  padding: 1px 7px;
+  white-space: nowrap;
 }
 
 .header-actions {

@@ -36,6 +36,10 @@ if [ -f /workspace/wait-for-sidecars ]; then
   mv /workspace/wait-for-sidecars /workspace/bin/wait-for-sidecars
   chmod +x /workspace/bin/wait-for-sidecars
 fi
+if [ -f /workspace/spawn-pipeline ]; then
+  mv /workspace/spawn-pipeline /workspace/bin/spawn-pipeline
+  chmod +x /workspace/bin/spawn-pipeline
+fi
 
 # Install CLI tools, Cypress system deps, and ffmpeg (for browser.mjs record).
 # Idempotent — apt-get install is a no-op if present.

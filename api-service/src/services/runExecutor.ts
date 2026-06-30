@@ -294,6 +294,12 @@ async function runSingleStage(stage: any, runId: number, pipeline: string, ctrl:
       '-e', `CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR}`,
       '-e', `STAGE_ARTIFACTS=${wsArtifacts}`,
       '-e', `STAGE_PROMPT=${prompt}`,
+      // Self-identity so the spawn-pipeline tool can tag any child pipeline with
+      // its creator (parent pipeline / run / stage).
+      '-e', `BENDER_PIPELINE=${pipeline}`,
+      '-e', `BENDER_RUN_ID=${runId}`,
+      '-e', `BENDER_STAGE_NAME=${stage.stage_name}`,
+      '-e', `BENDER_STAGE_INDEX=${stage.stage_index}`,
       // Re-inject pipeline args from .bender.json so edits made between runs
       // (via the args editor) take effect without recreating the container.
       ...pipelineArgEnvArgs(readBenderJson(pipeline)?.args),

@@ -39,6 +39,7 @@ export function registerRoutes(app: Express): void {
         browserPort?: number;
         browserHost?: string;
         stages?: PipelineStage[];
+        createdBy?: { pipeline: string; runId?: number; stage?: string };
       }> = [];
       if (fs.existsSync(PIPELINES_DIR)) {
         const entries = fs.readdirSync(PIPELINES_DIR).sort();
@@ -62,6 +63,7 @@ export function registerRoutes(app: Express): void {
               ...(browserPort && { browserPort }),
               ...(meta?.browserHost && { browserHost: meta.browserHost }),
               ...(stages.length && { stages }),
+              ...(meta?.createdBy && { createdBy: meta.createdBy }),
             });
           }
         }
@@ -203,6 +205,17 @@ export function registerRoutes(app: Express): void {
         }
       }
 
+      // Lineage tag: which pipeline/run/stage spawned this one (set by the
+      // spawn-pipeline tool). Sanitized so an agent can't inject arbitrary keys.
+      const cb = req.body.createdBy;
+      const createdBy = (cb && typeof cb === 'object' && cb.pipeline)
+        ? {
+            pipeline: String(cb.pipeline).slice(0, 200),
+            ...(cb.runId != null && Number.isFinite(Number(cb.runId)) && { runId: Number(cb.runId) }),
+            ...(cb.stage && { stage: String(cb.stage).slice(0, 200) }),
+          }
+        : null;
+
       const harnessJson: BenderJson = {
         ...(template && { template }),
         ...(req.body.definitionId && { definitionId: String(req.body.definitionId).trim() }),
@@ -213,6 +226,7 @@ export function registerRoutes(app: Express): void {
         ...(browserNetHost && { browserHost: browserNetHost }),
         ...(Object.keys(projectVars).length && { vars: projectVars }),
         ...(Object.keys(pipelineArgs).length && { args: pipelineArgs }),
+        ...(createdBy && { createdBy }),
       };
       const harnessPath = path.join(projectPath, '.bender.json');
       fs.writeFileSync(harnessPath, JSON.stringify(harnessJson, null, 2));
