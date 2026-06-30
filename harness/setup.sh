@@ -400,6 +400,7 @@ docker run -d \
     -e AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}" \
     -e AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION}" \
     -e DIGITALOCEAN_ACCESS_TOKEN="${DIGITALOCEAN_ACCESS_TOKEN}" \
+    -e JIRA_TOKEN="${JIRA_TOKEN}" \
     bender-api
 echo "API started"
 

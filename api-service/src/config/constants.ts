@@ -57,6 +57,7 @@ export const CONTAINER_CRED_ENV = [
   'AWS_SECRET_ACCESS_KEY',
   'AWS_DEFAULT_REGION',
   'DIGITALOCEAN_ACCESS_TOKEN',
+  'JIRA_TOKEN',
 ];
 
 // Best-effort browser-session recorder, written into the workspace and run via
