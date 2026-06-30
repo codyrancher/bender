@@ -133,7 +133,8 @@ set -g history-limit 50000
 export HOME=${CLI_HOME}
 export CLAUDE_CONFIG_DIR=${CLI_CLAUDE_CONFIG_DIR}
 export BENDER_API=http://localhost:8080/api
-cd ${CLI_WORKSPACE}
+# Stay in the tmux session's per-tab working dir (set via new-session -c) so
+# 'claude --continue' resumes THIS tab's conversation, not a shared one.
 while true; do
   start=$(date +%s)
   claude --dangerously-skip-permissions --continue 2>/dev/null || \\
@@ -221,7 +222,13 @@ export function attachCliServer(server: http.Server): void {
     // session (so multiple tabs run independent claude conversations) but they
     // all share the cli user's credentials, so auth is shared.
     const q = new URLSearchParams((req.url || '').split('?')[1] || '');
-    const sessionName = `${TMUX_PREFIX}-${safeSessionId(q.get('session') || 'main')}`;
+    const sid = safeSessionId(q.get('session') || 'main');
+    const sessionName = `${TMUX_PREFIX}-${sid}`;
+    // Each tab gets its own working dir. Claude keys conversation history by
+    // cwd, so a per-session dir means `claude --continue` resumes that tab's
+    // conversation instead of every tab sharing the latest one.
+    const workdir = path.join(CLI_WORKSPACE, 'sessions', sid);
+    try { fs.mkdirSync(workdir, { recursive: true }); fs.chownSync(workdir, CLI_UID, CLI_GID); } catch { /* ignore */ }
     // gosu into the cli user so claude (which refuses root) can run.
     // Using `env -i HOME=... PATH=...` to scrub inherited root env.
     const term = pty.spawn('gosu', [
@@ -234,13 +241,13 @@ export function attachCliServer(server: http.Server): void {
       'TERM=xterm-256color',
       'tmux', 'new-session', '-A',
       '-s', sessionName,
-      '-c', CLI_WORKSPACE,
+      '-c', workdir,
       RUNNER,
     ], {
       name: 'xterm-256color',
       cols: 120,
       rows: 32,
-      cwd: CLI_WORKSPACE,
+      cwd: workdir,
       env: process.env as { [key: string]: string },
     });
 
