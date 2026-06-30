@@ -5,6 +5,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/services/api'
+import { useUiStore } from '@/stores/ui'
 import StatePanel from './primitives/StatePanel.vue'
 import PipelineDefinitionsList from './PipelineDefinitionsList.vue'
 import PipelineDefinitionEditor from './PipelineDefinitionEditor.vue'
@@ -14,6 +15,7 @@ interface DefDetail { id: string; name: string; content: string; stages: any[]; 
 
 const route = useRoute()
 const router = useRouter()
+const ui = useUiStore()
 
 const definitions = ref<Array<{ id: string; name: string; stages: any[]; skills: string[] }>>([])
 const selectedId = ref<string | null>(null)
@@ -60,7 +62,8 @@ async function createDefinition(id: string) {
     await api.createDefinition(id)
     await load()
     router.push('/definitions/pipelines/' + id)
-  } catch {
+  } catch (e: any) {
+    ui.showToast(e?.message || 'Failed to create definition', 'error')
   } finally {
     creating.value = false
   }

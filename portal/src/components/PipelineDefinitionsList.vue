@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Left sidebar of the pipeline-definitions browser: the list plus create / import.
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 interface DefSummary { id: string; name: string; stages: any[]; skills: string[] }
 
@@ -16,10 +16,15 @@ const emit = defineEmits<{
 
 const newId = ref('')
 
+// Must match the backend's safeId rule (definitions service): start with a
+// letter/digit, then letters/digits/-/_.
+const ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
+const trimmedId = computed(() => newId.value.trim())
+const idValid = computed(() => ID_RE.test(trimmedId.value))
+
 function create() {
-  const id = newId.value.trim()
-  if (!id) return
-  emit('create', id)
+  if (!idValid.value) return
+  emit('create', trimmedId.value)
   newId.value = ''
 }
 </script>
@@ -39,7 +44,10 @@ function create() {
     </button>
     <div class="defs-create">
       <input v-model="newId" placeholder="new-definition-id" @keydown.enter="create" />
-      <button class="defs-create-btn" :disabled="creating || !newId.trim()" @click="create">+ Create</button>
+      <button class="defs-create-btn" :disabled="creating || !idValid" @click="create">+ Create</button>
+      <span v-if="trimmedId && !idValid" class="defs-create-hint">
+        Use letters, numbers, - and _ (must start with a letter or number).
+      </span>
     </div>
   </div>
 </template>
@@ -122,4 +130,10 @@ function create() {
 
 .defs-create-btn:hover:not(:disabled) { background: var(--color-accent); color: var(--color-text-bright); }
 .defs-create-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.defs-create-hint {
+  font-size: 11px;
+  color: var(--color-error);
+  line-height: 1.3;
+}
 </style>
