@@ -57,8 +57,35 @@ export const CONTAINER_CRED_ENV = [
   'AWS_SECRET_ACCESS_KEY',
   'AWS_DEFAULT_REGION',
   'DIGITALOCEAN_ACCESS_TOKEN',
+  // jira.suse.com PAT — the rancher-jira-api helper (jira.sh) reads it straight
+  // from the environment (Bearer auth) for the bug-extract/grooming stages.
   'JIRA_TOKEN',
+  // External-Rancher mode (see externalRancherHost): when RANCHER_URL is set,
+  // pipelines target an already-running Rancher instead of the per-pipeline
+  // sidecar. The admin password is a secret, so it rides this same env-injection
+  // path (referenced from the scaffolded .env, never written into it).
+  'RANCHER_URL',
+  'RANCHER_ADMIN_USER',
+  'RANCHER_ADMIN_PASSWORD',
+  // Branch-preview deploy (rancher-branch-deploy stage): base64 kubeconfig for
+  // the preview cluster deploy-branch.sh applies to. Base64 so the multi-line
+  // YAML rides a single env var; the stage decodes it to a file at runtime.
+  'PREVIEW_KUBECONFIG_B64',
 ];
+
+// External Rancher: when RANCHER_URL is set, pipelines drive that pre-existing
+// Rancher instead of standing up a per-pipeline `rancher` sidecar (no k3s boot,
+// no bootstrap). Returns the bare host (no scheme/path) for use as
+// RANCHER_HOST_NAME, or '' when unset (sidecar mode — the default).
+export function externalRancherHost(): string {
+  const url = (process.env.RANCHER_URL || '').trim();
+  if (!url) return '';
+  try {
+    return new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host;
+  } catch {
+    return url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  }
+}
 
 // Best-effort browser-session recorder, written into the workspace and run via
 // `docker exec` alongside a stage. Connects to the live browser over CDP,

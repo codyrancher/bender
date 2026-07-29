@@ -199,12 +199,15 @@ function materializeSkills(def: any, workspaceDir: string): void {
     }
     written.add(name.toLowerCase());
   }
-  // Library skills (id prefixed `rancher-browser-`) hold reusable browser-action
-  // scripts that stage skills compose. They aren't pipeline stages, so pull them
-  // in unconditionally so they're always available in the workspace.
+  // Library skills — reusable helpers that stage skills compose but that aren't
+  // themselves pipeline stages: browser-action scripts (`rancher-browser-*`) and
+  // the Jira API helper (`rancher-jira-api`, whose jira.sh the extract/grooming
+  // skills invoke as a sibling). Pull them in unconditionally so a stage never
+  // finds its helper missing.
+  const LIBRARY_SKILL = /^rancher-browser-|^rancher-jira-api$/;
   try {
     for (const lib of listSkillDefinitions() as Array<{ id: string }>) {
-      if (!/^rancher-browser-/.test(lib.id) || written.has(lib.id.toLowerCase())) continue;
+      if (!LIBRARY_SKILL.test(lib.id) || written.has(lib.id.toLowerCase())) continue;
       const skill = getSkillDefinition(lib.id);
       if (!skill) continue;
       for (const f of skill.files as Array<{ path: string; content: string; binary: boolean }>) {

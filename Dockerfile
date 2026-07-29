@@ -54,6 +54,25 @@ RUN CLAUDE_ARCH=$(dpkg --print-architecture) \
 RUN curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir /usr/local/bin --skip-shell \
     && fnm install 24.0.0
 
+# Standalone Node 24 (world-readable) for the branch-preview build/deploy —
+# rancher/dashboard requires Node >=24, but the default `node` here is 20 for the
+# rest of the tooling. The rancher-branch-deploy stage puts /opt/node24/bin on
+# PATH so deploy-branch.sh builds with 24 regardless of the run user.
+RUN NODE_ARCH=$(dpkg --print-architecture) \
+    && case "$NODE_ARCH" in amd64) NA=x64 ;; arm64) NA=arm64 ;; *) echo "unsupported arch $NODE_ARCH" >&2; exit 1 ;; esac \
+    && curl -fsSL "https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-${NA}.tar.xz" | tar -xJ -C /opt \
+    && mv "/opt/node-v24.16.0-linux-${NA}" /opt/node24
+
+# kubectl — the branch-preview deploy (deploy-branch.sh) applies manifests and
+# copies the built dist into the preview cluster.
+RUN K_ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v1.31.4/bin/linux/${K_ARCH}/kubectl" \
+    && chmod +x /usr/local/bin/kubectl
+
+# Branch-preview deploy tooling (deploy-branch.sh, cleanup-branch.sh, nginx
+# templates). Staged into the claude-image build context by harness/Dockerfile.
+COPY preview /opt/preview
+
 # Copy entrypoint script
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 

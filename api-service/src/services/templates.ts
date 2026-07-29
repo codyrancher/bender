@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import Handlebars from 'handlebars';
-import { bundledDir } from '../config/constants';
+import { bundledDir, externalRancherHost } from '../config/constants';
 
 const TEMPLATES_DIR = bundledDir('templates');
 
@@ -147,6 +147,11 @@ export function getTemplateVars(projectName: string, _settingsKeys?: Record<stri
   // NOT returned here. They are routed into the container as environment variables
   // (see credentialEnvArgs in routes.ts) so secrets are never written into the
   // scaffolded workspace files. Only non-secret identity values are templated.
+  // External-Rancher toggle (see externalRancherHost). When set, scaffolded
+  // files target the existing Rancher instead of the sidecar. The admin password
+  // is NOT templated here — it's injected as a container env var and referenced
+  // from .env as ${RANCHER_ADMIN_PASSWORD}, keeping the secret out of the files.
+  const rancherHost = externalRancherHost();
   return {
     projectName,
     adminPassword: generatePassword(),
@@ -155,6 +160,9 @@ export function getTemplateVars(projectName: string, _settingsKeys?: Record<stri
     userPassword3: generatePassword(),
     gitName: git.gitName,
     gitEmail: git.gitEmail,
+    rancherExternal: rancherHost ? '1' : '',
+    rancherHost,
+    rancherAdminUser: (process.env.RANCHER_ADMIN_USER || 'admin').trim(),
   };
 }
 

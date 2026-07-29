@@ -5,10 +5,15 @@
 # Kill any previously-running socat on :8443 so restarts don't leave zombies
 pkill -f "socat TCP-LISTEN:8443" 2>/dev/null || true
 
-# Forward localhost:8443 → rancher sidecar:443 so tooling inside the project
-# can reach the Rancher API at https://localhost:8443.
-socat TCP-LISTEN:8443,fork,reuseaddr TCP:{{projectName}}-rancher:443 &
+# Forward localhost:8443 → Rancher:443 so tooling inside the project can reach
+# the Rancher API at https://localhost:8443.
+socat TCP-LISTEN:8443,fork,reuseaddr TCP:{{#if rancherExternal}}{{rancherHost}}{{else}}{{projectName}}-rancher{{/if}}:443 &
 
+{{#if rancherExternal}}
+# External Rancher ({{rancherHost}}): it's already provisioned — do NOT run the
+# bootstrap (it would reconfigure server-url/users on someone else's instance).
+echo "Using external Rancher at {{rancherHost}} — skipping sidecar bootstrap."
+{{else}}
 # Run Rancher bootstrap (wait for API, login, create users, cloud creds).
 # Skip if already completed successfully on a previous run.
 if [ ! -f /workspace/.rancher-setup-done ]; then
@@ -18,3 +23,4 @@ if [ ! -f /workspace/.rancher-setup-done ]; then
 else
   echo "Rancher already configured, skipping setup..."
 fi
+{{/if}}

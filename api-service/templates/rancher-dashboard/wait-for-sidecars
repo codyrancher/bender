@@ -11,7 +11,13 @@
 
 set -e
 TIMEOUT="${TIMEOUT:-180}"
-TARGETS="${*:-browser rancher}"
+# External Rancher (RANCHER_URL set): there's no rancher sidecar to wait on, so
+# the default target set is just the browser.
+if [ -n "$RANCHER_URL" ]; then
+  TARGETS="${*:-browser}"
+else
+  TARGETS="${*:-browser rancher}"
+fi
 
 if [ -z "$HARNESS_API" ] || [ -z "$HARNESS_PROJECT" ]; then
   echo "wait-for-sidecars: HARNESS_API / HARNESS_PROJECT not set" >&2
@@ -27,8 +33,10 @@ check_browser() {
 }
 
 check_rancher() {
-  # Rancher's /ping returns "pong" once it's accepting requests.
-  curl -ksf --max-time 2 "https://${HARNESS_PROJECT}-rancher/ping" >/dev/null 2>&1
+  # Rancher's /ping returns "pong" once it's accepting requests. Target the
+  # external instance when configured, else the per-pipeline sidecar.
+  local base="${RANCHER_URL:-https://${HARNESS_PROJECT}-rancher}"
+  curl -ksf --max-time 2 "${base%/}/ping" >/dev/null 2>&1
 }
 
 end=$(( $(date +%s) + TIMEOUT ))
