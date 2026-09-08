@@ -18,3 +18,6 @@ pipelines/
 .config/
 .cli/
 .browser-profile/
+
+kubeconfig/
+preview/

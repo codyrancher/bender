@@ -3,7 +3,7 @@
 import { spawn, spawnSync } from 'child_process';
 import { getTemplateMeta, DEFAULT_BROWSER_SIDECAR, SidecarDef } from './templates';
 import { extractPipelineFlags } from '../utils/pipelineFlags';
-import { COMPOSE_PROJECT, NETWORK_NAME, KEY_DEFAULTS } from '../config/constants';
+import { COMPOSE_PROJECT, NETWORK_NAME, KEY_DEFAULTS, externalRancherHost } from '../config/constants';
 import { getContainerStatus } from '../utils/container';
 import { readBenderJson } from './benderJson';
 import { readSettings, envKeys } from './settings';
@@ -27,6 +27,13 @@ export function startSidecars(pipeline: string, sidecars?: SidecarDef[]): void {
       // Non-template project: use default browser sidecar
       sidecars = meta.sidecars.includes('browser') ? [DEFAULT_BROWSER_SIDECAR] : [];
     }
+    if (!sidecars.length) return;
+  }
+
+  // External-Rancher mode: a pre-existing Rancher is the target, so never stand
+  // up the per-pipeline `rancher` sidecar (skills reach it via RANCHER_HOST_NAME).
+  if (externalRancherHost()) {
+    sidecars = sidecars.filter(s => s.suffix !== 'rancher');
     if (!sidecars.length) return;
   }
 
@@ -86,6 +93,10 @@ export function startSidecars(pipeline: string, sidecars?: SidecarDef[]): void {
           value = value.replace(/\{\{harness\.(\w+)\}\}/g, (_match: string, key: string) => {
             return meta?.vars?.[key] || '';
           });
+          // External Rancher: redirect any `<project>-rancher` host baked into a
+          // sidecar env (e.g. the browser's CHROME_CLI start URL) to the real one.
+          const extRancher = externalRancherHost();
+          if (extRancher) value = value.split(`${project}-rancher`).join(extRancher);
           args.push('-e', `${k}=${value}`);
         }
       }

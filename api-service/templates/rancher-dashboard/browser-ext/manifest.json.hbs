@@ -4,7 +4,7 @@
   "version": "1.0",
   "content_scripts": [
     {
-      "matches": ["https://localhost/*", "https://{{projectName}}-rancher/*"],
+      "matches": ["https://localhost/*", "https://{{#if rancherExternal}}{{rancherHost}}{{else}}{{projectName}}-rancher{{/if}}/*"],
       "js": ["autofill.js", "command-menu.js"],
       "css": ["styles.css", "command-menu.css"],
       "run_at": "document_idle"

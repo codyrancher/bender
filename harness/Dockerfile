@@ -44,6 +44,8 @@ COPY api-service/ /app/api-service/
 # Copy Claude image build context for building inside container
 COPY Dockerfile /app/claude-image/Dockerfile
 COPY entrypoint.sh /app/claude-image/entrypoint.sh
+# Branch-preview deploy tooling baked into the pipeline image (see ./Dockerfile).
+COPY preview /app/claude-image/preview
 
 # Generate a unique build ID so setup.sh can detect image changes
 RUN date -u +%Y%m%d%H%M%S > /app/.build-id

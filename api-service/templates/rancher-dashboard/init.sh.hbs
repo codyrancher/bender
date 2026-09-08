@@ -15,7 +15,7 @@ fi
 
 # Export environment variables from .env and set API URL
 echo 'set -a; source /workspace/.env; set +a' >> ~/.bashrc
-echo 'export API=https://{{projectName}}-rancher' >> ~/.bashrc
+echo 'export API=https://{{#if rancherExternal}}{{rancherHost}}{{else}}{{projectName}}-rancher{{/if}}' >> ~/.bashrc
 # Browser sidecar shares this container's network namespace (network_container:
 # true in template.json), so CDP is reachable on localhost, not by project-name.
 echo 'export CLAUDE_BROWSER_CDP=http://localhost:9222' >> ~/.bashrc

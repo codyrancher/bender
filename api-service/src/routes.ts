@@ -543,10 +543,17 @@ export function registerRoutes(app: Express): void {
     const { name, filename } = req.params;
     const runId = Number(req.params.runId);
     const stageIndex = Number(req.params.stageIndex);
-    if (!/^[a-zA-Z0-9._-]+$/.test(filename) || !Number.isInteger(runId) || !Number.isInteger(stageIndex)) {
+    if (!Number.isInteger(runId) || !Number.isInteger(stageIndex)) {
       return res.status(400).json({ error: 'Invalid artifact path' });
     }
-    const filePath = path.join(stageArtifactDir(name, runId, stageIndex), filename);
+    // Attachment names are arbitrary (Jira files routinely contain spaces,
+    // parens, etc.), so don't restrict the character set — guard traversal by
+    // resolving the path and requiring it to be a direct child of the stage dir.
+    const dir = path.resolve(stageArtifactDir(name, runId, stageIndex));
+    const filePath = path.resolve(dir, filename);
+    if (path.dirname(filePath) !== dir) {
+      return res.status(400).json({ error: 'Invalid artifact path' });
+    }
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Artifact not found' });
     }
